@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: Agent
+
+  ai:
+    deepseek:
+      api-key:
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-v4-flash
+
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+server:
+  tomcat:
+    max-http-form-post-size: 20MB

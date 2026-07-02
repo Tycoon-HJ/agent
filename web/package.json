@@ -1,0 +1,24 @@
+{
+  "name": "ai-chat-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "marked": "^15.0.6",
+    "dompurify": "^3.2.4",
+    "highlight.js": "^11.11.1",
+    "github-markdown-css": "^5.8.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+    "typescript": "~5.7.2",
+    "vite": "^6.2.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
