@@ -11,6 +11,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * WebSocket 通知处理器
@@ -26,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class NotificationWebSocketHandler extends TextWebSocketHandler {
+    private static final Pattern USER_ID_PATTERN = Pattern.compile("(^|&)userId=([^&]+)");
 
     /**
      * 活跃的 WebSocket 连接（userId → WebSocketSession）
@@ -135,8 +138,11 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
      */
     private String extractUserId(WebSocketSession session) {
         String query = session.getUri() != null ? session.getUri().getQuery() : null;
-        if (query != null && query.startsWith("userId=")) {
-            return query.substring(7);
+        if (query != null && !query.isBlank()) {
+            Matcher matcher = USER_ID_PATTERN.matcher(query);
+            if (matcher.find()) {
+                return java.net.URLDecoder.decode(matcher.group(2), java.nio.charset.StandardCharsets.UTF_8);
+            }
         }
         return "default-user";
     }
