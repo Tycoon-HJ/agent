@@ -139,11 +139,20 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
 import type {ChatMessage as ChatMessageType, ChatSession} from '../types/chat'
 import ChatMessage from '../components/ChatMessage.vue'
 
 // ==================== 状态定义 ====================
+
+/** 用户ID（与后端保持一致） */
+const userId = 'default-user'
+
+/** WebSocket 实例 */
+let ws: WebSocket | null = null
+
+/** WebSocket 重连定时器 */
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 所有会话列表 */
 const sessions = ref<ChatSession[]>([])
@@ -708,6 +717,137 @@ function autoResizeTextarea(): void {
 // 监听输入框内容变化
 watch(inputText, autoResizeTextarea)
 
+// ==================== WebSocket 通知 ====================
+
+/**
+ * 建立 WebSocket 连接，用于接收定时任务执行结果
+ */
+function connectWebSocket(): void {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsUrl = `${protocol}//${location.host}/ws/notifications?userId=${userId}`
+
+  console.log('[WebSocket] 正在连接:', wsUrl)
+  ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    console.log('[WebSocket] 连接成功')
+    // 清除重连定时器
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer)
+      wsReconnectTimer = null
+    }
+    // 启动心跳
+    startHeartbeat()
+  }
+
+  ws.onmessage = (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data)
+      console.log('[WebSocket] 收到消息:', data)
+
+      if (data.type === 'scheduled_task_result') {
+        handleTaskResult(data.taskId, data.content)
+      }
+    } catch (e) {
+      console.warn('[WebSocket] 解析消息失败:', e)
+    }
+  }
+
+  ws.onclose = () => {
+    console.log('[WebSocket] 连接关闭，3秒后重连...')
+    scheduleReconnect()
+  }
+
+  ws.onerror = (err) => {
+    console.error('[WebSocket] 连接错误:', err)
+  }
+}
+
+/** 心跳定时器 */
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * 启动心跳保活（每30秒发送一次 ping）
+ */
+function startHeartbeat(): void {
+  stopHeartbeat()
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'ping'}))
+    }
+  }, 30000)
+}
+
+/**
+ * 停止心跳
+ */
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
+}
+
+/**
+ * 安排重连
+ */
+function scheduleReconnect(): void {
+  if (wsReconnectTimer) return
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null
+    connectWebSocket()
+  }, 3000)
+}
+
+/**
+ * 处理定时任务执行结果，将结果作为 AI 消息添加到当前会话
+ */
+function handleTaskResult(taskId: string, content: string): void {
+  // 找到当前会话，如果没有则使用第一个会话
+  const session = currentSession.value || sessions.value[0]
+  if (!session) {
+    console.warn('[WebSocket] 没有可用会话，无法展示任务结果')
+    return
+  }
+
+  const aiMessage: ChatMessageType = {
+    id: generateId(),
+    role: 'assistant',
+    content: `⏰ **定时任务执行结果** (任务ID: ${taskId})\n\n${content}`,
+    timestamp: Date.now(),
+  }
+
+  session.messages.push(aiMessage)
+  session.updatedAt = Date.now()
+  saveSessions()
+
+  // 自动滚动到底部
+  nextTick(() => {
+    scrollToBottom()
+  })
+
+  console.log('[WebSocket] 任务结果已添加到会话:', taskId)
+}
+
+/**
+ * 断开 WebSocket 连接
+ */
+function disconnectWebSocket(): void {
+  stopHeartbeat()
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+  if (ws) {
+    ws.close()
+    ws = null
+  }
+}
+
 // ==================== 生命周期 ====================
 
 onMounted(() => {
@@ -725,6 +865,13 @@ onMounted(() => {
   nextTick(() => {
     inputRef.value?.focus()
   })
+
+  // 建立 WebSocket 通知连接
+  connectWebSocket()
+})
+
+onUnmounted(() => {
+  disconnectWebSocket()
 })
 </script>
 
