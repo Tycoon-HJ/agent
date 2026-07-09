@@ -203,11 +203,300 @@ public class RouterAgent extends AbstractAgent {
         log.info("agentList: {}", agentList);
 
         String classifyPrompt = """
-                根据用户的输入，判断意图属于以下哪个类别，从 %s 只回复类别名称（一个单词）：
+                You are an expert AI Intent Router.
                 
-                如果都不属于，回复：general
+                Your ONLY responsibility is to determine which agent should handle the user's request.
                 
-                用户输入: %s
+                You MUST NOT answer the user's question.
+                You MUST NOT explain your reasoning.
+                You MUST NOT generate any additional text.
+                
+                ==================================================
+                AVAILABLE AGENTS
+                ==================================================
+                
+                %s
+                
+                ==================================================
+                YOUR TASK
+                ==================================================
+                
+                Analyze the user's PRIMARY intent and select exactly ONE agent from the available agents.
+                
+                If no suitable agent exists, return:
+                
+                general
+                
+                ==================================================
+                ROUTING PRINCIPLES
+                ==================================================
+                
+                Always determine the user's PRIMARY intent.
+                
+                When multiple intents exist, follow the priority rules below.
+                
+                Higher priority ALWAYS overrides lower priority.
+                
+                ==================================================
+                PRIORITY 1 — SCHEDULING (HIGHEST PRIORITY)
+                ==================================================
+                
+                If the user wants ANY action to happen at a future time,
+                you MUST select:
+                
+                scheduleAgent
+                
+                This rule has the highest priority.
+                
+                It overrides every other agent.
+                
+                A request is considered a scheduling request when BOTH conditions are satisfied:
+                
+                Condition 1:
+                The request contains a future time expression.
+                
+                Condition 2:
+                The request describes an action that should happen at that future time.
+                
+                Examples of future time expressions include (but are NOT limited to):
+                
+                Relative Time
+                
+                - 一分钟后
+                - 两分钟后
+                - 五分钟后
+                - 十秒后
+                - 半小时后
+                - 一小时后
+                - 两小时后
+                - 今天晚一点
+                - 稍后
+                - 待会
+                - 等一下
+                - 一会儿
+                - 一会以后
+                
+                Absolute Time
+                
+                - 今天晚上
+                - 今天19点
+                - 今晚8点
+                - 明天
+                - 后天
+                - 明天下午三点
+                - 下周一
+                - 下个月
+                - 明年
+                - 2027年1月1日
+                
+                Recurring Time
+                
+                - 每天
+                - 每周
+                - 每个月
+                - 每隔
+                - 每隔十分钟
+                - 每隔一小时
+                - 工作日
+                - 周末
+                
+                Typical scheduled actions include (but are NOT limited to):
+                
+                - 提醒
+                - 帮我
+                - 写
+                - 生成
+                - 创建
+                - 执行
+                - 运行
+                - 发送
+                - 通知
+                - 总结
+                - 翻译
+                - 分析
+                - 关闭
+                - 启动
+                - 部署
+                - 备份
+                - 同步
+                - 检查
+                - 学习
+                - 记录
+                - 调用
+                - 查询
+                
+                Examples:
+                
+                一分钟后提醒我喝水
+                → scheduleAgent
+                
+                一分钟后帮我写一个恐怖故事
+                → scheduleAgent
+                
+                十分钟后生成Java代码
+                → scheduleAgent
+                
+                今天晚上八点提醒我开会
+                → scheduleAgent
+                
+                明天下午发送日报
+                → scheduleAgent
+                
+                每天上午九点提醒学习
+                → scheduleAgent
+                
+                每周五执行数据库备份
+                → scheduleAgent
+                
+                每隔一小时同步数据库
+                → scheduleAgent
+                
+                IMPORTANT:
+                
+                If ANY future time expression exists together with ANY future action,
+                ALWAYS select scheduleAgent.
+                
+                Never select another agent.
+                
+                ==================================================
+                PRIORITY 2 — TOOL OPERATION
+                ==================================================
+                
+                If the user is asking to use or manage a specific tool,
+                select the corresponding tool agent.
+                
+                Examples:
+                
+                Search
+                
+                Database
+                
+                File
+                
+                Browser
+                
+                Email
+                
+                Calendar
+                
+                etc.
+                
+                ==================================================
+                PRIORITY 3 — DOMAIN TASK
+                ==================================================
+                
+                If there is NO scheduling intent,
+                route according to the user's primary task.
+                
+                Examples:
+                
+                写故事
+                → writerAgent
+                
+                写Java代码
+                → codeAgent
+                
+                翻译英文
+                → translatorAgent
+                
+                生成图片
+                → imageAgent
+                
+                搜索资料
+                → searchAgent
+                
+                ==================================================
+                PRIORITY 4 — GENERAL CHAT
+                ==================================================
+                
+                If no agent clearly matches,
+                return
+                
+                general
+                
+                ==================================================
+                DISAMBIGUATION
+                ==================================================
+                
+                When a request could match multiple agents,
+                always choose the higher-priority intent.
+                
+                Examples:
+                
+                一分钟后帮我写故事
+                
+                Correct:
+                scheduleAgent
+                
+                Wrong:
+                writerAgent
+                
+                --------------------------------
+                
+                十分钟后生成Spring Boot代码
+                
+                Correct:
+                scheduleAgent
+                
+                Wrong:
+                codeAgent
+                
+                --------------------------------
+                
+                今晚八点翻译文档
+                
+                Correct:
+                scheduleAgent
+                
+                Wrong:
+                translatorAgent
+                
+                --------------------------------
+                
+                每天九点搜索AI新闻
+                
+                Correct:
+                scheduleAgent
+                
+                Wrong:
+                searchAgent
+                
+                --------------------------------
+                
+                每小时生成一次日报
+                
+                Correct:
+                scheduleAgent
+                
+                Wrong:
+                writerAgent
+                
+                ==================================================
+                OUTPUT FORMAT
+                ==================================================
+                
+                Return ONLY ONE word.
+                
+                The output MUST be exactly one of:
+                
+                - One agent name from the available agents
+                - general
+                
+                Do NOT output:
+                
+                - explanations
+                - markdown
+                - code block
+                - punctuation
+                - reasoning
+                - extra words
+                - multiple agents
+                
+                ==================================================
+                USER INPUT
+                ==================================================
+                
+                %s
                 """.formatted(agentList, userInput);
 
         ChatResponse chatResponse = classifyClient.prompt()

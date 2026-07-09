@@ -15,8 +15,7 @@ import java.lang.annotation.Target;
  * <p>
  * 使用方式：
  *
- * @AgentTool
- * public class UserTool {
+ * @AgentTool public class UserTool {
  * @Tool(description = "查询用户信息")
  * public String findUser(String userId) { ... }
  * }

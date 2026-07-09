@@ -16,6 +16,8 @@ import java.util.UUID;
  * 提供两种接口：
  * 1. /api/ask       → 普通请求（等待完整回答后返回）
  * 2. /api/ask/stream → 流式请求（SSE 逐字返回，打字机效果）
+ * <p>
+ * 通知推送通过 WebSocket: ws://host/ws/notifications?userId=xxx
  */
 @Slf4j
 @RestController

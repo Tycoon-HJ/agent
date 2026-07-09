@@ -4,10 +4,10 @@ spring:
 
   ai:
     deepseek:
-      api-key:
+      api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com
       chat:
-        model: deepseek-v4-flash
+        model: deepseek-v4-pro
 
   servlet:
     multipart:

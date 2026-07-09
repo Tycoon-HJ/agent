@@ -40,9 +40,7 @@ public class MemeTool implements Tool {
     /**
      * API Token
      */
-    private static final String API_TOKEN = System.getenv("ALAPI_TOKEN") != null
-            ? System.getenv("ALAPI_TOKEN")
-            : "";
+    private static final String API_TOKEN = System.getenv("ALAPI_TOKEN");
 
     /**
      * 工具名称

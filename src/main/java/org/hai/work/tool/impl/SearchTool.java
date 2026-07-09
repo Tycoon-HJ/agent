@@ -45,9 +45,7 @@ public class SearchTool implements Tool {
     /**
      * API Key（从环境变量或配置中读取）
      */
-    private static final String API_KEY = System.getenv("TAVILY_API_KEY") != null
-            ? System.getenv("TAVILY_API_KEY")
-            : "";
+    private static final String API_KEY = System.getenv("TAVILY_API_KEY");
 
     /**
      * 工具名称
