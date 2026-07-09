@@ -190,11 +190,13 @@ public class ScheduledTaskManager {
     private void executeTask(String taskId, String taskDescription, String sessionId, String userId) {
         log.info("========== 定时任务触发: taskId={}, userId={} ==========", taskId, userId);
         log.info("任务描述: {}", taskDescription);
+        TaskInfo info = taskInfoMap.get(taskId);
+        boolean oneTimeTask = info != null && "once".equalsIgnoreCase(info.scheduleType());
 
         try {
             AgentRequest request = new AgentRequest();
             request.setInput(taskDescription);
-            request.setSessionId("scheduled-" + taskId);
+            request.setSessionId((sessionId == null || sessionId.isBlank()) ? "scheduled-" + taskId : sessionId);
             request.setUserId(userId);
 
             AgentResponse response = routerAgent.execute(request);
@@ -204,21 +206,20 @@ public class ScheduledTaskManager {
             // 推送结果给前端
             notificationService.sendNotification(userId, taskId,
                     answer != null ? answer : "任务执行完成，但未返回结果。");
-
+        } catch (Exception e) {
+            log.error("定时任务执行异常: taskId={}", taskId, e);
+            // 异常时也推送通知
+            notificationService.sendNotification(userId, taskId,
+                    "❌ 定时任务执行异常: " + e.getMessage());
+        } finally {
             // 一次性任务执行后自动清理
-            ScheduledFuture<?> future = activeTasks.get(taskId);
-            if (future != null && future.isDone()) {
+            if (oneTimeTask) {
                 activeTasks.remove(taskId);
                 taskInfoMap.computeIfPresent(taskId, (k, v) -> new TaskInfo(
                         v.taskId(), v.description(), v.scheduleType(),
                         v.scheduleValue(), v.createdAt(), "completed", v.userId()));
                 log.info("一次性任务已自动清理: taskId={}", taskId);
             }
-        } catch (Exception e) {
-            log.error("定时任务执行异常: taskId={}", taskId, e);
-            // 异常时也推送通知
-            notificationService.sendNotification(userId, taskId,
-                    "❌ 定时任务执行异常: " + e.getMessage());
         }
 
         log.info("========== 定时任务结束: taskId={} ==========", taskId);

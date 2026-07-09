@@ -145,14 +145,17 @@ import ChatMessage from '../components/ChatMessage.vue'
 
 // ==================== 状态定义 ====================
 
-/** 用户ID（与后端保持一致） */
-const userId = 'default-user'
+/** 用户ID（浏览器本地持久化，避免多客户端冲突） */
+const userId = getOrCreateUserId()
 
 /** WebSocket 实例 */
 let ws: WebSocket | null = null
 
 /** WebSocket 重连定时器 */
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 是否主动断开（页面卸载时不应重连） */
+let wsManuallyClosed = false
 
 /** 所有会话列表 */
 const sessions = ref<ChatSession[]>([])
@@ -726,9 +729,10 @@ function connectWebSocket(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return
   }
+  wsManuallyClosed = false
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${location.host}/ws/notifications?userId=${userId}`
+  const wsUrl = `${protocol}//${location.host}/ws/notifications?userId=${encodeURIComponent(userId)}`
 
   console.log('[WebSocket] 正在连接:', wsUrl)
   ws = new WebSocket(wsUrl)
@@ -758,6 +762,10 @@ function connectWebSocket(): void {
   }
 
   ws.onclose = () => {
+    if (wsManuallyClosed) {
+      console.log('[WebSocket] 连接已主动关闭')
+      return
+    }
     console.log('[WebSocket] 连接关闭，3秒后重连...')
     scheduleReconnect()
   }
@@ -837,6 +845,7 @@ function handleTaskResult(taskId: string, content: string): void {
  * 断开 WebSocket 连接
  */
 function disconnectWebSocket(): void {
+  wsManuallyClosed = true
   stopHeartbeat()
   if (wsReconnectTimer) {
     clearTimeout(wsReconnectTimer)
@@ -846,6 +855,17 @@ function disconnectWebSocket(): void {
     ws.close()
     ws = null
   }
+}
+
+function getOrCreateUserId(): string {
+  const key = 'agent-user-id'
+  const stored = localStorage.getItem(key)
+  if (stored && stored.trim()) {
+    return stored
+  }
+  const newId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  localStorage.setItem(key, newId)
+  return newId
 }
 
 // ==================== 生命周期 ====================
