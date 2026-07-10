@@ -85,6 +85,24 @@
           <div class="image-count">{{ uploadedImages.length }} 张图片</div>
         </div>
 
+        <!-- 文件预览区域 -->
+        <div v-if="uploadedDocuments.length > 0" class="uploaded-documents">
+          <div
+              v-for="(doc, index) in uploadedDocuments"
+              :key="index"
+              class="uploaded-document-item"
+          >
+            <span class="document-icon">📄</span>
+            <span class="document-info">
+              <span class="document-name">{{ doc.name }}</span>
+              <span class="document-size">{{ formatFileSize(doc.size) }}</span>
+            </span>
+            <button class="btn-remove-document" @click="removeUploadedDocument(index)" title="移除文件">
+              ×
+            </button>
+          </div>
+        </div>
+
         <div class="input-wrapper">
           <!-- 图片上传按钮 -->
           <button
@@ -104,10 +122,28 @@
               @change="handleFileUpload"
           />
 
+          <!-- 文件上传按钮 -->
+          <button
+              class="btn-upload btn-upload-doc"
+              @click="triggerDocumentFileInput"
+              :disabled="isStreaming"
+              title="上传文件 (CSV, Markdown, Excel, TXT)"
+          >
+            📎
+          </button>
+          <input
+              ref="documentFileInputRef"
+              type="file"
+              accept=".csv,.md,.txt,.xlsx,.xls,.pdf"
+              multiple
+              style="display: none"
+              @change="handleDocumentFileUpload"
+          />
+
           <textarea
               ref="inputRef"
               v-model="inputText"
-              :placeholder="uploadedImages.length > 0 ? '描述图片编辑要求... (如：将图片改为赛博朋克风格)' : '输入消息... (Enter 发送，Shift+Enter 换行，可粘贴图片)'"
+              :placeholder="getPlaceholder()"
               :disabled="isStreaming"
               @keydown="handleKeydown"
               @paste="handlePaste"
@@ -145,17 +181,14 @@ import ChatMessage from '../components/ChatMessage.vue'
 
 // ==================== 状态定义 ====================
 
-/** 用户ID（浏览器本地持久化，避免多客户端冲突） */
-const userId = getOrCreateUserId()
+/** 用户ID（与后端保持一致） */
+const userId = 'default-user'
 
 /** WebSocket 实例 */
 let ws: WebSocket | null = null
 
 /** WebSocket 重连定时器 */
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-/** 是否主动断开（页面卸载时不应重连） */
-let wsManuallyClosed = false
 
 /** 所有会话列表 */
 const sessions = ref<ChatSession[]>([])
@@ -194,6 +227,33 @@ interface UploadedImage {
 
 const uploadedImages = ref<UploadedImage[]>([])
 
+/** 已上传的文档文件列表 */
+interface UploadedDocument {
+  file: File
+  name: string     // 文件名
+  type: string     // MIME 类型
+  content: string  // 文件内容（文本）
+  size: number     // 文件大小
+}
+
+const uploadedDocuments = ref<UploadedDocument[]>([])
+
+/** 文档文件输入框 DOM 引用 */
+const documentFileInputRef = ref<HTMLInputElement | null>(null)
+
+/**
+ * 获取输入框占位符文本
+ */
+function getPlaceholder(): string {
+  if (uploadedImages.value.length > 0) {
+    return '描述图片编辑要求... (如：将图片改为赛博朋克风格)'
+  }
+  if (uploadedDocuments.value.length > 0) {
+    return '输入关于文件的问题... (如：帮我分析这个数据)'
+  }
+  return '输入消息... (Enter 发送，Shift+Enter 换行，可粘贴图片或文件)'
+}
+
 // ==================== 计算属性 ====================
 
 /** 当前会话 */
@@ -208,7 +268,7 @@ const currentMessages = computed(() =>
 
 /** 是否可以发送消息 */
 const canSend = computed(() => {
-  return (inputText.value.trim() || uploadedImages.value.length > 0) && !isStreaming.value
+  return (inputText.value.trim() || uploadedImages.value.length > 0 || uploadedDocuments.value.length > 0) && !isStreaming.value
 })
 
 // ==================== 会话管理 ====================
@@ -341,7 +401,7 @@ function addImageFromFile(file: File): void {
 
 /**
  * 处理粘贴事件
- * 支持直接粘贴剪贴板中的图片
+ * 支持直接粘贴剪贴板中的图片和文件
  */
 function handlePaste(event: ClipboardEvent): void {
   const clipboardData = event.clipboardData
@@ -390,6 +450,28 @@ function handlePaste(event: ClipboardEvent): void {
 
       break // 只处理第一个图片
     }
+
+    // 检查是否为文件类型（非图片）
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (!file) continue
+
+      // 检查文件扩展名
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+      if (SUPPORTED_FILE_EXTENSIONS.includes(ext)) {
+        event.preventDefault()
+
+        // 限制最多上传 3 个文件
+        const maxFiles = 3
+        if (uploadedDocuments.value.length >= maxFiles) {
+          alert(`最多只能上传 ${maxFiles} 个文件`)
+          return
+        }
+
+        addDocumentFromFile(file)
+        break
+      }
+    }
   }
 }
 
@@ -412,6 +494,172 @@ async function imageToBase64(file: File): Promise<string> {
   })
 }
 
+// ==================== 文档上传 ====================
+
+/** 支持的文档文件扩展名 */
+const SUPPORTED_FILE_EXTENSIONS = ['.csv', '.md', '.txt', '.xlsx', '.xls', '.pdf']
+
+/**
+ * 触发文档文件选择
+ */
+function triggerDocumentFileInput(): void {
+  documentFileInputRef.value?.click()
+}
+
+/**
+ * 处理文档文件上传
+ */
+function handleDocumentFileUpload(event: Event): void {
+  const target = event.target as HTMLInputElement
+  const files = target.files
+
+  if (!files || files.length === 0) return
+
+  // 限制最多上传 3 个文件
+  const maxFiles = 3
+  const remainingSlots = maxFiles - uploadedDocuments.value.length
+
+  if (remainingSlots <= 0) {
+    alert(`最多只能上传 ${maxFiles} 个文件`)
+    return
+  }
+
+  const filesToProcess = Array.from(files).slice(0, remainingSlots)
+
+  filesToProcess.forEach(file => {
+    addDocumentFromFile(file)
+  })
+
+  // 清空 input 以允许重复上传同一文件
+  target.value = ''
+}
+
+/**
+ * 从文件添加文档
+ */
+async function addDocumentFromFile(file: File): Promise<void> {
+  const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+
+  // 验证文件类型
+  if (!SUPPORTED_FILE_EXTENSIONS.includes(ext)) {
+    alert(`"${file.name}" 不是支持的文件类型，支持: ${SUPPORTED_FILE_EXTENSIONS.join(', ')}`)
+    return
+  }
+
+  // 验证文件大小（限制 10MB）
+  if (file.size > 10 * 1024 * 1024) {
+    alert(`"${file.name}" 超过 10MB 限制`)
+    return
+  }
+
+  try {
+    let content = ''
+    let mimeType = file.type || 'text/plain'
+
+    if (ext === '.xlsx' || ext === '.xls') {
+      // Excel 文件：使用 xlsx 库解析为 CSV
+      content = await parseExcelFile(file)
+    } else if (ext === '.pdf') {
+      // PDF 文件：读取为 base64，由后端 PDFBox 解析
+      content = await readPdfAsBase64(file)
+      mimeType = 'application/pdf'
+    } else {
+      // 文本文件：直接读取内容
+      content = await readTextFile(file)
+    }
+
+    uploadedDocuments.value.push({
+      file,
+      name: file.name,
+      type: mimeType,
+      content,
+      size: file.size,
+    })
+
+    console.log(`[FileUpload] 文件已添加: ${file.name}, 类型: ${mimeType}, 内容长度: ${content.length}`)
+  } catch (e) {
+    console.error('[FileUpload] 文件读取失败:', e)
+    alert(`文件 "${file.name}" 读取失败`)
+  }
+}
+
+/**
+ * 读取文本文件内容
+ */
+function readTextFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target?.result as string)
+    reader.onerror = reject
+    reader.readAsText(file)
+  })
+}
+
+/**
+ * 读取 PDF 文件为 base64 字符串（不含 data URI 前缀）
+ * 后端 PDFBox 需要原始 base64 数据来解析 PDF
+ */
+function readPdfAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      // 去掉 "data:application/pdf;base64," 前缀，只保留纯 base64
+      const base64 = dataUrl.split(',')[1] || ''
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * 解析 Excel 文件为 CSV 文本
+ */
+async function parseExcelFile(file: File): Promise<string> {
+  const XLSX = await import('xlsx')
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+
+        let result = ''
+        workbook.SheetNames.forEach((sheetName, index) => {
+          const worksheet = workbook.Sheets[sheetName]
+          const csv = XLSX.utils.sheet_to_csv(worksheet)
+          if (index > 0) result += '\n\n'
+          result += `【Sheet: ${sheetName}】\n${csv}`
+        })
+
+        resolve(result)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = reject
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+/**
+ * 移除已上传的文档
+ */
+function removeUploadedDocument(index: number): void {
+  uploadedDocuments.value.splice(index, 1)
+}
+
+/**
+ * 格式化文件大小
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 // ==================== 消息发送与 SSE ====================
 
 /**
@@ -420,8 +668,9 @@ async function imageToBase64(file: File): Promise<string> {
 async function sendMessage(): Promise<void> {
   const text = inputText.value.trim()
   const hasImages = uploadedImages.value.length > 0
+  const hasFiles = uploadedDocuments.value.length > 0
 
-  if ((!text && !hasImages) || isStreaming.value) return
+  if ((!text && !hasImages && !hasFiles) || isStreaming.value) return
 
   // 确保有当前会话
   if (!currentSession.value) {
@@ -437,45 +686,56 @@ async function sendMessage(): Promise<void> {
     }
   }
 
+  // 准备文件数据
+  const fileDataList: { name: string; type: string; content: string }[] = []
+  if (hasFiles) {
+    for (const doc of uploadedDocuments.value) {
+      fileDataList.push({
+        name: doc.name,
+        type: doc.type,
+        content: doc.content,
+      })
+    }
+  }
+
   // 添加用户消息
   const userMessage: ChatMessageType = {
     id: generateId(),
     role: 'user',
-    content: text || (hasImages ? '[发送了图片]' : ''),
+    content: text || (hasImages ? '[发送了图片]' : (hasFiles ? '[发送了文件]' : '')),
     timestamp: Date.now(),
     images: imageUrls.length > 0 ? imageUrls : undefined,
+    files: fileDataList.length > 0 ? fileDataList : undefined,
   }
   currentSession.value!.messages.push(userMessage)
   currentSession.value!.updatedAt = Date.now()
 
   // 如果是第一条消息，更新会话标题
   if (currentSession.value!.messages.length === 1) {
-    const title = text || '图片对话'
+    const title = text || (hasFiles ? '文件分析' : '图片对话')
     currentSession.value!.title = title.slice(0, 20) + (title.length > 20 ? '...' : '')
   }
 
-  // 清空输入框和已上传图片
+  // 清空输入框、已上传图片和文件
   inputText.value = ''
   uploadedImages.value = []
+  uploadedDocuments.value = []
 
   // 保存并滚动
   saveSessions()
   scrollToBottom()
 
-  // 调用 SSE 流式接口（POST，图片放 body 里）
-  startSSE(text, imageUrls)
+  // 调用 SSE 流式接口
+  startSSE(text, imageUrls, fileDataList)
 }
 
 /**
- * 启动 SSE 流式连接（POST，支持图片）
- *
- * EventSource 只支持 GET，图片 base64 数据放 query string 会超长导致 ERR_FAILED。
- * 改用 fetch POST + ReadableStream 手动解析 SSE。
+ * 启动 SSE 流式连接（POST，支持图片和文件）
  *
  * 接口：POST /api/ask/stream?sessionId=xxx
- * Body：{ "text": "...", "images": ["data:image/png;base64,..."] }
+ * Body：{ "input": "...", "images": [...], "files": [...] }
  */
-function startSSE(text: string, imageUrls: string[] = []): void {
+function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = []): void {
   const sessionId = currentSessionId.value
 
   // 创建 AI 消息占位
@@ -492,10 +752,11 @@ function startSSE(text: string, imageUrls: string[] = []): void {
   // 用于拼接完整文本的变量
   let fullText = ''
 
-  // 构建请求体（字段名必须和后端 AgentRequest 一致：input, images）
+  // 构建请求体（字段名必须和后端 AgentRequest 一致：input, images, files）
   const body = JSON.stringify({
     input: text,
     images: imageUrls,
+    files: fileDataList,
   })
 
   // 使用 fetch POST 发送 SSE 请求
@@ -729,10 +990,9 @@ function connectWebSocket(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return
   }
-  wsManuallyClosed = false
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${location.host}/ws/notifications?userId=${encodeURIComponent(userId)}`
+  const wsUrl = `${protocol}//${location.host}/ws/notifications?userId=${userId}`
 
   console.log('[WebSocket] 正在连接:', wsUrl)
   ws = new WebSocket(wsUrl)
@@ -762,10 +1022,6 @@ function connectWebSocket(): void {
   }
 
   ws.onclose = () => {
-    if (wsManuallyClosed) {
-      console.log('[WebSocket] 连接已主动关闭')
-      return
-    }
     console.log('[WebSocket] 连接关闭，3秒后重连...')
     scheduleReconnect()
   }
@@ -845,7 +1101,6 @@ function handleTaskResult(taskId: string, content: string): void {
  * 断开 WebSocket 连接
  */
 function disconnectWebSocket(): void {
-  wsManuallyClosed = true
   stopHeartbeat()
   if (wsReconnectTimer) {
     clearTimeout(wsReconnectTimer)
@@ -855,17 +1110,6 @@ function disconnectWebSocket(): void {
     ws.close()
     ws = null
   }
-}
-
-function getOrCreateUserId(): string {
-  const key = 'agent-user-id'
-  const stored = localStorage.getItem(key)
-  if (stored && stored.trim()) {
-    return stored
-  }
-  const newId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  localStorage.setItem(key, newId)
-  return newId
 }
 
 // ==================== 生命周期 ====================
@@ -1145,6 +1389,73 @@ onUnmounted(() => {
   margin-left: 8px;
 }
 
+/* 已上传文件预览 */
+.uploaded-documents {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.uploaded-document-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.document-icon {
+  font-size: 18px;
+}
+
+.document-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.document-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-size {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.btn-remove-document {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background-color: var(--danger-color);
+  color: white;
+  font-size: 14px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  margin-left: 4px;
+}
+
+.btn-remove-document:hover {
+  background-color: var(--danger-hover);
+}
+
 .input-wrapper {
   display: flex;
   gap: 12px;
@@ -1178,6 +1489,11 @@ onUnmounted(() => {
 .btn-upload:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 文件上传按钮样式（与图片按钮略有区分） */
+.btn-upload-doc {
+  font-size: 18px;
 }
 
 .input-wrapper textarea {

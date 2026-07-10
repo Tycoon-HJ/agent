@@ -26,10 +26,11 @@ import org.springframework.stereotype.Component;
 public class ScheduleTool implements Tool {
 
     private final ScheduledTaskManager taskManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
-    public ScheduleTool(ScheduledTaskManager taskManager) {
+    public ScheduleTool(ScheduledTaskManager taskManager, ObjectMapper objectMapper) {
         this.taskManager = taskManager;
+        this.objectMapper = objectMapper;
     }
 
     @Override

@@ -33,6 +33,17 @@
             <img :src="img" :alt="`上传的图片 ${index + 1}`" @click="previewImage(img)"/>
           </div>
         </div>
+        <!-- 用户上传的文件 -->
+        <div v-if="message.files && message.files.length > 0" class="file-list">
+          <div
+              v-for="(file, index) in message.files"
+              :key="index"
+              class="file-item"
+          >
+            <span class="file-icon">📄</span>
+            <span class="file-name">{{ file.name }}</span>
+          </div>
+        </div>
         <!-- 文本内容 -->
         <div v-if="message.content" class="text-content">{{ message.content }}</div>
       </div>
@@ -181,6 +192,35 @@ function downloadImage(url: string, index: number): void {
 
 .text-content {
   white-space: pre-wrap;
+}
+
+/* 文件列表 */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.file-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* AI内容 */

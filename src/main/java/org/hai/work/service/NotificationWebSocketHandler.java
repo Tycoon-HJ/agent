@@ -11,35 +11,46 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * WebSocket 通知处理器
  * <p>
  * 管理前端 WebSocket 连接，支持向指定用户推送定时任务执行结果。
  * <p>
- * 连接协议：
- * - 前端连接: ws://host/ws/notifications?userId=xxx
- * - 连接建立后，服务端发送: {"type":"connected","message":"通知服务已连接"}
- * - 任务完成时，服务端推送: {"type":"scheduled_task_result","taskId":"xxx","content":"xxx"}
- * - 前端发送: {"type":"ping"} → 服务端回复: {"type":"pong"}
+ * 安全要求：
+ * - 必须通过 HTTP 握手阶段的 JWT 鉴权
+ * - userId 从已验证的 HTTP Session 属性中获取，不从 query 参数读取
+ * - 拒绝匿名连接（不再回落到 default-user）
  */
 @Slf4j
 @Component
 public class NotificationWebSocketHandler extends TextWebSocketHandler {
-    private static final Pattern USER_ID_PATTERN = Pattern.compile("(^|&)userId=([^&]+)");
+
+    /**
+     * HTTP 握手阶段设置的 Session 属性名：已验证的 userId
+     */
+    public static final String ATTR_AUTHENTICATED_USER_ID = "authenticatedUserId";
 
     /**
      * 活跃的 WebSocket 连接（userId → WebSocketSession）
      */
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+
+    public NotificationWebSocketHandler(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        String userId = extractUserId(session);
+        String userId = extractAuthenticatedUserId(session);
+        if (userId == null) {
+            log.warn("WebSocket 连接缺少已验证的 userId，关闭连接: sessionId={}", session.getId());
+            session.close(CloseStatus.NOT_ACCEPTABLE.withReason("未认证"));
+            return;
+        }
+
         sessions.put(userId, session);
         log.info("WebSocket 连接建立: userId={}, sessionId={}, 当前活跃连接数: {}",
                 userId, session.getId(), sessions.size());
@@ -55,7 +66,7 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         String payload = message.getPayload();
-        log.debug("收到 WebSocket 消息: sessionId={}, payload={}", session.getId(), payload);
+        log.debug("收到 WebSocket 消息: sessionId={}", session.getId());
 
         try {
             Map<String, Object> msg = objectMapper.readValue(payload, Map.class);
@@ -72,16 +83,20 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        String userId = extractUserId(session);
-        sessions.remove(userId);
+        String userId = extractAuthenticatedUserId(session);
+        if (userId != null) {
+            sessions.remove(userId);
+        }
         log.info("WebSocket 连接关闭: userId={}, status={}, 当前活跃连接数: {}",
                 userId, status, sessions.size());
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        String userId = extractUserId(session);
-        sessions.remove(userId);
+        String userId = extractAuthenticatedUserId(session);
+        if (userId != null) {
+            sessions.remove(userId);
+        }
         log.warn("WebSocket 传输错误: userId={}, error={}", userId, exception.getMessage());
     }
 
@@ -133,17 +148,13 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 从 WebSocket URL 参数中提取 userId
-     * URL 格式: ws://host/ws/notifications?userId=xxx
+     * 从 WebSocket Session 属性中提取已认证的 userId
+     * <p>
+     * userId 由 HTTP 握手拦截器在 JWT 验证后设置，
+     * 不从 query 参数读取（防止伪造）。
      */
-    private String extractUserId(WebSocketSession session) {
-        String query = session.getUri() != null ? session.getUri().getQuery() : null;
-        if (query != null && !query.isBlank()) {
-            Matcher matcher = USER_ID_PATTERN.matcher(query);
-            if (matcher.find()) {
-                return java.net.URLDecoder.decode(matcher.group(2), java.nio.charset.StandardCharsets.UTF_8);
-            }
-        }
-        return "default-user";
+    private String extractAuthenticatedUserId(WebSocketSession session) {
+        Object userId = session.getAttributes().get(ATTR_AUTHENTICATED_USER_ID);
+        return userId instanceof String id ? id : null;
     }
 }

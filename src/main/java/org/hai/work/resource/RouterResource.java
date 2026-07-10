@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 统一入口（路由分发）
@@ -16,19 +19,30 @@ import java.util.UUID;
  * 提供两种接口：
  * 1. /api/ask       → 普通请求（等待完整回答后返回）
  * 2. /api/ask/stream → 流式请求（SSE 逐字返回，打字机效果）
- * <p>
- * 通知推送通过 WebSocket: ws://host/ws/notifications?userId=xxx
  */
 @Slf4j
 @RestController
 @RequestMapping("/api")
 public class RouterResource {
 
-    private final RouterAgent routerAgent;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final int MAX_LOG_INPUT_LENGTH = 200;
+    private static final long SSE_TIMEOUT_MS = 300_000L;
+    private static final long EXECUTOR_SHUTDOWN_TIMEOUT_SECONDS = 5;
 
-    public RouterResource(RouterAgent routerAgent) {
+    private final RouterAgent routerAgent;
+    private final ObjectMapper objectMapper;
+
+    /**
+     * 虚拟线程执行器，用于 SSE 流式处理
+     * <p>
+     * 使用虚拟线程避免阻塞 Servlet 线程，
+     * 同时通过 ExecutorService 统一管理生命周期。
+     */
+    private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
+
+    public RouterResource(RouterAgent routerAgent, ObjectMapper objectMapper) {
         this.routerAgent = routerAgent;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -42,7 +56,7 @@ public class RouterResource {
         }
 
         log.info("========== 收到请求 GET /api/ask ==========");
-        log.info("用户输入: {}, 会话ID: {}", input, sessionId);
+        log.info("用户输入: {}, 会话ID: {}", sanitize(input), sessionId);
 
         AgentRequest request = new AgentRequest();
         request.setInput(input);
@@ -55,14 +69,12 @@ public class RouterResource {
     }
 
     /**
-     * 流式请求接口（SSE，POST 支持图片）
+     * 流式请求接口（SSE，POST 支持图片和文件）
      * <p>
-     * 改为 POST 请求，前端通过 JSON body 传递 text + images。
-     * base64 图片数据量大，不能放在 GET 的 query string 中（URL 长度限制）。
+     * 前端通过 JSON body 传递 text + images + files。
      * <p>
-     * SSE 数据格式（前端收到的原始数据）：
-     * data:你好\n\n
-     * data:，我来\n\n
+     * SSE 数据格式：
+     * data:{"text":"..."}\n\n
      * data:[DONE]\n\n
      */
     @PostMapping("/ask/stream")
@@ -72,35 +84,36 @@ public class RouterResource {
             sessionId = UUID.randomUUID().toString();
         }
 
-        // 兼容：如果 body 中没有 input 字段，用默认值
         String input = body.getInput();
         if (input == null || input.isBlank()) {
-            log.error("未从前端收到input字段");
-            throw new RuntimeException("未从前端收到input字段");
+            log.error("未从前端收到 input 字段");
+            throw new IllegalArgumentException("未从前端收到 input 字段");
         }
 
+        int imageCount = body.getImages() != null ? body.getImages().size() : 0;
+        int fileCount = body.getFiles() != null ? body.getFiles().size() : 0;
         log.info("========== 收到流式请求 POST /api/ask/stream ==========");
-        log.info("用户输入: {}, 会话ID: {}, 图片数: {}",
-                input, sessionId, body.getImages() != null ? body.getImages().size() : 0);
+        log.info("用户输入: {}, 会话ID: {}, 图片数: {}, 文件数: {}",
+                sanitize(input), sessionId, imageCount, fileCount);
 
-        // 设置超时时间为 5 分钟（LLM 生成可能较慢）
-        SseEmitter emitter = new SseEmitter(300_000L);
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
 
-        // 构建完整的请求对象
         AgentRequest request = new AgentRequest();
         request.setInput(input);
         request.setSessionId(sessionId);
         request.setUserId("default-user");
         request.setImages(body.getImages());
+        request.setFiles(body.getFiles());
 
-        // 在独立线程中执行流式调用，避免阻塞 Servlet 线程
-        Thread.startVirtualThread(() -> {
+        // 使用统一执行器提交任务
+        String finalSessionId = sessionId;
+        String finalSessionId1 = sessionId;
+        String finalSessionId2 = sessionId;
+        executorService.submit(() -> {
             try {
                 routerAgent.executeStream(request)
                         .doOnNext(chunk -> {
                             try {
-                                // JSON 编码：将 chunk 包装为 {"text":"..."} 格式
-                                // 避免 markdown 中的换行符破坏 SSE 协议格式
                                 String json = objectMapper.writeValueAsString(java.util.Map.of("text", chunk));
                                 emitter.send(json);
                             } catch (Exception e) {
@@ -109,25 +122,45 @@ public class RouterResource {
                         })
                         .doOnComplete(() -> {
                             try {
-                                // 发送结束标记
                                 emitter.send("[DONE]");
                                 emitter.complete();
-                                log.info("流式请求完成");
+                                log.info("流式请求完成: sessionId={}", finalSessionId);
                             } catch (Exception e) {
                                 log.warn("发送 SSE 完成标记失败: {}", e.getMessage());
                             }
                         })
                         .doOnError(e -> {
-                            log.error("流式请求异常", e);
+                            log.error("流式请求异常: sessionId={}", finalSessionId1, e);
                             emitter.completeWithError(e);
                         })
-                        .subscribe(); // 订阅 Flux，触发数据流
+                        .subscribe();
             } catch (Exception e) {
-                log.error("流式请求启动失败", e);
+                log.error("流式请求启动失败: sessionId={}", finalSessionId2, e);
                 emitter.completeWithError(e);
             }
         });
 
+        // 超时和完成回调，确保资源清理
+        String finalSessionId3 = sessionId;
+        emitter.onTimeout(() -> {
+            log.warn("SSE 超时: sessionId={}", finalSessionId3);
+            emitter.complete();
+        });
+
+        String finalSessionId4 = sessionId;
+        emitter.onCompletion(() -> {
+            log.debug("SSE 完成: sessionId={}", finalSessionId4);
+        });
+
         return emitter;
+    }
+
+    /**
+     * 日志脱敏：截断过长输入，避免打印大量 base64 数据
+     */
+    private String sanitize(String input) {
+        if (input == null) return "null";
+        if (input.length() <= MAX_LOG_INPUT_LENGTH) return input;
+        return input.substring(0, MAX_LOG_INPUT_LENGTH) + "... (truncated, total=" + input.length() + ")";
     }
 }

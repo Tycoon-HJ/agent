@@ -36,6 +36,13 @@ public class AgentRequest {
     private List<String> images;
 
     /**
+     * 用户上传的文件列表
+     * 支持 CSV、Markdown、Excel（前端转CSV）、TXT 等文本类文件。
+     * 前端读取文件内容后，通过 POST body 发送给后端。
+     */
+    private List<FileData> files;
+
+    /**
      * 无参构造（用于 setter 方式构建）
      */
     public AgentRequest() {
@@ -79,5 +86,13 @@ public class AgentRequest {
 
     public void setImages(List<String> images) {
         this.images = images;
+    }
+
+    public List<FileData> getFiles() {
+        return files;
+    }
+
+    public void setFiles(List<FileData> files) {
+        this.files = files;
     }
 }
