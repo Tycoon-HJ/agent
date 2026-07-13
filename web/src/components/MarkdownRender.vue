@@ -1,177 +1,240 @@
 <template>
-  <!--
-    MarkdownRender 组件
-    - 使用 marked 解析 Markdown
-    - 使用 DOMPurify 过滤 XSS
-    - 使用 highlight.js 高亮代码块
-    - 支持 GFM 语法
-  -->
-  <div
-      class="markdown-body"
-      v-html="renderedHtml"
-  ></div>
+  <div class="markdown-body" v-html="renderedHtml"></div>
 </template>
 
 <script setup lang="ts">
-import {computed} from 'vue'
-import {Marked} from 'marked'
+import { computed } from 'vue'
+import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
-import 'github-markdown-css/github-markdown.css'
 
-// Props 定义
 interface Props {
   content: string
 }
 
 const props = defineProps<Props>()
 
-// 创建独立的 marked 实例（避免全局状态污染）
 const marked = new Marked({
   gfm: true,
   breaks: true,
 })
 
-// 自定义渲染器 - 代码块高亮
 marked.use({
   renderer: {
-    code({text, lang}: { text: string; lang?: string }): string {
+    code({ text, lang }: { text: string; lang?: string }): string {
       let highlighted: string
       if (lang && hljs.getLanguage(lang)) {
         try {
-          highlighted = hljs.highlight(text, {language: lang}).value
+          highlighted = hljs.highlight(text, { language: lang }).value
         } catch {
           highlighted = hljs.highlightAuto(text).value
         }
       } else {
         highlighted = hljs.highlightAuto(text).value
       }
-      return `<pre><code class="hljs language-${lang || 'auto'}">${highlighted}</code></pre>`
+
+      const langLabel = lang || 'code'
+      return `<div class="code-block"><div class="code-header"><span class="code-lang">${langLabel}</span><button class="code-copy" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button></div><pre><code class="hljs language-${lang || 'auto'}">${highlighted}</code></pre></div>`
     },
   },
 })
 
-/**
- * 计算渲染后的 HTML
- * 流程：Markdown -> marked 解析 -> DOMPurify 过滤 -> 输出
- */
 const renderedHtml = computed(() => {
   if (!props.content) return ''
-
-  // 1. 使用 marked 解析 Markdown（同步模式）
-  const rawHtml = marked.parse(props.content, {async: false}) as string
-
-  // 2. 使用 DOMPurify 过滤 XSS
-  const cleanHtml = DOMPurify.sanitize(rawHtml, {
-    ADD_TAGS: ['code', 'pre', 'span'],
-    ADD_ATTR: ['class', 'hljs'],
+  const rawHtml = marked.parse(props.content, { async: false }) as string
+  return DOMPurify.sanitize(rawHtml, {
+    ADD_TAGS: ['code', 'pre', 'span', 'div'],
+    ADD_ATTR: ['class', 'hljs', 'onclick'],
   })
-
-  return cleanHtml
 })
 </script>
 
 <style scoped>
-/* Markdown 容器样式 */
 .markdown-body {
   font-size: 14px;
   line-height: 1.8;
+  color: var(--text-primary);
   word-break: break-word;
 }
 
-/* 代码块样式 - 深色背景，支持横向滚动 */
+/* Headings */
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  color: var(--text-primary);
+  font-weight: 700;
+  margin-top: 24px;
+  margin-bottom: 12px;
+  letter-spacing: -0.3px;
+}
+
+.markdown-body :deep(h1) { font-size: 24px; }
+.markdown-body :deep(h2) { font-size: 20px; }
+.markdown-body :deep(h3) { font-size: 16px; }
+
+/* Paragraphs */
+.markdown-body :deep(p) {
+  margin-bottom: 12px;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* Code Block */
+.markdown-body :deep(.code-block) {
+  background: #111827;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  margin: 16px 0;
+  overflow: hidden;
+}
+
+.markdown-body :deep(.code-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.markdown-body :deep(.code-lang) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.markdown-body :deep(.code-copy) {
+  border: none;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+
+.markdown-body :deep(.code-copy:hover) {
+  background: rgba(255,255,255,0.1);
+  color: var(--text-primary);
+}
+
 .markdown-body :deep(pre) {
-  background-color: #1e1e1e;
-  border-radius: 8px;
+  margin: 0;
   padding: 16px;
   overflow-x: auto;
-  margin: 12px 0;
 }
 
 .markdown-body :deep(code) {
-  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Andale Mono', 'Ubuntu Mono', monospace;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
   font-size: 13px;
+  line-height: 1.6;
 }
 
-/* 行内代码样式 */
+/* Inline code */
 .markdown-body :deep(:not(pre) > code) {
-  background-color: rgba(175, 184, 193, 0.2);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: rgba(99,102,241,0.1);
+  color: var(--primary-light);
+  padding: 2px 7px;
+  border-radius: 6px;
   font-size: 0.9em;
 }
 
-/* 引用块样式 */
+/* Blockquote */
 .markdown-body :deep(blockquote) {
-  border-left: 4px solid var(--accent-color);
+  border-left: 3px solid var(--primary);
   padding-left: 16px;
-  margin: 12px 0;
+  margin: 16px 0;
   color: var(--text-secondary);
+  font-style: italic;
 }
 
-/* 表格样式 */
+/* Table */
 .markdown-body :deep(table) {
   border-collapse: collapse;
   width: 100%;
-  margin: 12px 0;
+  margin: 16px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
 }
 
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  border: 1px solid var(--border-color);
-  padding: 8px 12px;
+  border: 1px solid var(--border);
+  padding: 10px 14px;
   text-align: left;
+  font-size: 13px;
 }
 
 .markdown-body :deep(th) {
-  background-color: var(--bg-secondary);
+  background: var(--bg-surface);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-/* 链接样式 */
+.markdown-body :deep(td) {
+  color: var(--text-secondary);
+}
+
+/* Links */
 .markdown-body :deep(a) {
-  color: var(--accent-color);
+  color: var(--primary-light);
   text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
 }
 
 .markdown-body :deep(a:hover) {
-  text-decoration: underline;
+  border-bottom-color: var(--primary-light);
 }
 
-/* 列表样式 */
+/* Lists */
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
   padding-left: 24px;
   margin: 8px 0;
 }
 
-/* 图片样式 */
+.markdown-body :deep(li) {
+  margin-bottom: 4px;
+}
+
+.markdown-body :deep(li::marker) {
+  color: var(--text-tertiary);
+}
+
+/* Images */
 .markdown-body :deep(img) {
   max-width: 100%;
   max-height: 400px;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
   transition: transform 0.2s;
   object-fit: contain;
 }
 
 .markdown-body :deep(img:hover) {
-  transform: scale(1.02);
+  transform: scale(1.01);
 }
 
-/* 图片链接样式 */
-.markdown-body :deep(a > img) {
-  border: 2px solid transparent;
-}
-
-.markdown-body :deep(a > img:hover) {
-  border-color: var(--accent-color);
-}
-
-/* 分割线样式 */
+/* Horizontal Rule */
 .markdown-body :deep(hr) {
   border: none;
-  border-top: 1px solid var(--border-color);
-  margin: 16px 0;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+
+/* Strong / Bold */
+.markdown-body :deep(strong) {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 </style>
