@@ -114,8 +114,6 @@
       </div>
     </main>
 
-    <!-- Agent Panel -->
-    <RightPanel />
   </div>
 </template>
 
@@ -127,7 +125,6 @@ import ChatMessage from '../components/ChatMessage.vue'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatInput from '../components/ChatInput.vue'
 import UploadPreview from '../components/UploadPreview.vue'
-import RightPanel from '../components/RightPanel.vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 
 // ── Constants ──
@@ -227,20 +224,29 @@ function switchSession(sessionId: string): void {
   currentSessionId.value = sessionId
   sidebarOpen.value = false
   visibleCount.value = 200
+  saveSessions()
 }
 
 function deleteSession(sessionId: string): void {
   const index = sessions.value.findIndex(s => s.sessionId === sessionId)
   if (index === -1) return
+
+  // 先从数组中移除
+  sessions.value.splice(index, 1)
+
+  // 如果删除的是当前会话，需要切换
   if (sessionId === currentSessionId.value) {
-    if (sessions.value.length > 1) {
-      currentSessionId.value = sessions.value[index === 0 ? 1 : index - 1].sessionId
+    if (sessions.value.length > 0) {
+      // 切换到相邻会话（优先上方）
+      const newIndex = Math.min(index, sessions.value.length - 1)
+      currentSessionId.value = sessions.value[newIndex].sessionId
     } else {
+      // 所有会话都删光了，创建一个新的
       createNewSession()
       return
     }
   }
-  sessions.value.splice(index, 1)
+
   saveSessions()
 }
 

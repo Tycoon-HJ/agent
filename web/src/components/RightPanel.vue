@@ -100,35 +100,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Quick Actions -->
-    <div class="panel-section">
-      <div class="section-label">Quick Actions</div>
-      <div class="quick-actions">
-        <button class="quick-action-btn" title="Clear context">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M3 6h18"/>
-            <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-          </svg>
-          Clear
-        </button>
-        <button class="quick-action-btn" title="Export chat">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Export
-        </button>
-        <button class="quick-action-btn" title="Settings">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
-          Settings
-        </button>
-      </div>
-    </div>
   </aside>
 </template>
 

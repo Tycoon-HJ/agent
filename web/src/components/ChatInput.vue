@@ -48,13 +48,6 @@
 
       <!-- Right Actions -->
       <div class="input-actions-right">
-        <!-- Model Selector -->
-        <div class="model-selector" @click="toggleModelMenu">
-          <span class="model-name">{{ currentModel }}</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
 
         <!-- Send / Stop Button -->
         <button
