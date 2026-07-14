@@ -22,6 +22,16 @@ export interface ChatMessage {
     images?: string[]
     /** 文件列表 */
     files?: FileData[]
+    /** 是否需要确认 */
+    needsConfirmation?: boolean
+    /** 确认ID */
+    confirmationId?: string
+    /** 确认消息 */
+    confirmationMessage?: string
+    /** 已完成的部分结果 */
+    partialResult?: string
+    /** 待执行的操作描述 */
+    pendingAction?: string
 }
 
 /** 会话信息 */

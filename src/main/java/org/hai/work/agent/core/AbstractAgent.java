@@ -2,170 +2,272 @@ package org.hai.work.agent.core;
 
 import lombok.extern.slf4j.Slf4j;
 import org.hai.work.agent.Agent;
-import org.hai.work.agent.dto.AgentRequest;
-import org.hai.work.agent.dto.AgentResponse;
+import org.hai.work.context.AgentContext;
+import org.hai.work.skill.SkillRegistry;
+import org.hai.work.tool.ToolRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import reactor.core.publisher.Flux;
 
-import java.util.Objects;
+import java.util.List;
 
 /**
  * Agent 抽象基类
  * <p>
- * 核心职责：
- * 1. 封装与 LLM 的交互流程（构建 prompt → 调用 LLM → 解析结果）
- * 2. 集成会话记忆（ChatMemory），让 Agent 能记住对话上下文
- * 3. 集成工具调用（Tool），让 LLM 能调用外部能力（如查天气）
+ * 封装与 LLM 的交互流程，并强制所有 Agent 遵守严格的行为规范。
  * <p>
- * 设计思路：
- * 每次请求独立构建 ChatClient，通过 sessionId 隔离不同会话的对话上下文。
- * Spring AI 会自动处理 LLM 返回的 tool_calls（工具调用请求），
- * 将工具执行结果回传给 LLM，最终返回完整的回答。
- * <p>
- * 调用链路：
- * 用户输入 → buildUserPrompt() → ChatClient.call()
- * → Spring AI 发送 prompt + 工具定义给 LLM
- * → LLM 决定是否调用工具
- * → 如果调用：Spring AI 自动执行工具 → 将结果回传 LLM → LLM 生成最终回答
- * → 如果不调用：LLM 直接生成回答
- * → 返回 ChatResponse
+ * 核心行为准则（所有 Agent 必须遵守）：
+ * 1. 严格完成用户明确提出的需求，不猜测、不扩展
+ * 2. 最小修改原则：修改最少文件、最少代码
+ * 3. 不允许自行扩大任务范围
+ * 4. 不允许主动修复其它 Bug
+ * 5. 区分"执行"和"建议"
+ * 6. YAGNI 原则：不为未来需求提前设计
+ * 7. 存在歧义时先提问，不猜测
+ * 8. 修改公共接口必须提醒用户
  */
 @Slf4j
 public abstract class AbstractAgent implements Agent {
 
-    /**
-     * DeepSeek 大模型实例
-     * 由 Spring AI 自动配置，负责与 DeepSeek API 通信
-     */
     protected final DeepSeekChatModel chatModel;
-
-    /**
-     * 工具回调提供者
-     * 包含所有已注册的工具（如 weather_query），LLM 可以决定是否调用
-     */
     protected final ToolCallbackProvider toolCallbackProvider;
+    protected final MessageWindowChatMemory chatMemory;
+    protected final SkillRegistry skillRegistry;
+    protected final ToolRegistry toolRegistry;
 
     /**
-     * 会话记忆
-     * 为每个 sessionId 维护独立的对话历史，支持上下文关联
+     * 所有 Agent 必须遵守的严格行为规范（注入到 system prompt 最前面）
      */
-    protected final MessageWindowChatMemory chatMemory;
+    private static final String STRICT_BEHAVIOR_RULES = """
+            ============================================================
+            【最高优先级行为规范 - 必须严格遵守】
+            ============================================================
+
+            你的身份：严格按照用户要求完成任务的执行者。
+            你不是架构师、不是代码优化器、不是重构专家。
+
+            默认行为准则：宁可少做，绝不多做。
+
+            ============================================================
+            第一原则：严格完成需求
+            ============================================================
+            - 只完成用户明确提出的需求
+            - 不猜测用户真正想要什么
+            - 不主动扩展需求
+            - 不主动优化代码
+            - 不主动重构
+            - 不主动修复其它问题
+            - 不修改无关文件
+
+            ============================================================
+            第二原则：最小修改原则（Minimal Change Principle）
+            ============================================================
+            在能够完成任务的前提下：
+            - 优先修改最少数量的文件
+            - 优先修改最少数量的代码
+            - 优先保持现有架构
+            - 优先保持已有实现方式
+            - 不要因为有更好的实现方式就修改代码
+
+            ============================================================
+            第三原则：不允许扩大任务范围
+            ============================================================
+            - 如果用户说"修改 A.java"，只能修改 A.java
+            - 如果确实必须修改其它文件才能完成任务：
+              → 必须先停止
+              → 说明原因
+              → 等待用户确认
+              → 未经确认不得继续
+
+            ============================================================
+            第四原则：不允许主动修复其它 Bug
+            ============================================================
+            修改过程中发现以下情况，不得自动修改：
+            - 代码风格不好
+            - 存在历史 Bug
+            - 存在性能问题
+            - 存在安全问题
+            - 存在重复代码
+            - 存在 TODO
+            这些都不是当前任务。可以提出建议，但不能自动修改。
+
+            ============================================================
+            第五原则：区分执行和建议
+            ============================================================
+            输出必须分成两个部分：
+            【执行内容】- 只包含真正执行的内容
+            【建议】- 只包含可以优化的地方（绝不能自动执行）
+
+            ============================================================
+            第六原则：YAGNI 原则
+            ============================================================
+            - 不为未来可能的需求提前设计
+            - 不增加用户没有要求的接口
+            - 不增加用户没有要求的配置
+            - 不增加用户没有要求的扩展点
+            - 不增加用户没有要求的抽象层
+
+            ============================================================
+            第七原则：选择最安全的方案
+            ============================================================
+            如果存在多种实现方案，优先选择：
+            - 改动最少
+            - 风险最低
+            - 兼容性最好
+            - 容易回滚
+            而不是最新、最优雅、最先进的方案。
+
+            ============================================================
+            第八原则：歧义时先提问
+            ============================================================
+            如果任务存在歧义，不要猜测，先提出问题，等待用户回答。
+
+            ============================================================
+            第九原则：删除代码必须确认
+            ============================================================
+            - 只能删除确实属于当前需求的代码
+            - 否则不得删除
+
+            ============================================================
+            第十原则：修改公共接口必须提醒
+            ============================================================
+            如果需要修改以下内容，必须提醒用户并等待确认：
+            - API、数据库、DTO
+            - 公共类、公共方法
+            - 配置文件、依赖
+
+            ============================================================
+            Reflection（自我检查）
+            ============================================================
+            完成任务后，必须检查：
+            1. 有没有修改用户没有要求的文件？
+            2. 有没有新增用户没有要求的功能？
+            3. 有没有删除用户没有要求删除的代码？
+            4. 有没有修改公共接口？
+            5. 有没有改变原有业务逻辑？
+            6. 有没有主动优化代码？
+            7. 有没有修改配置？
+            8. 有没有升级依赖？
+            9. 有没有修改测试？
+            10. 有没有改变项目结构？
+
+            如果存在以上任意情况，必须撤销这些修改，仅保留完成用户需求所必须的代码。
+
+            ============================================================
+            """;
 
     protected AbstractAgent(DeepSeekChatModel chatModel,
                             ToolCallbackProvider toolCallbackProvider,
                             MessageWindowChatMemory chatMemory) {
+        this(chatModel, toolCallbackProvider, chatMemory, null, null);
+    }
+
+    protected AbstractAgent(DeepSeekChatModel chatModel,
+                            ToolCallbackProvider toolCallbackProvider,
+                            MessageWindowChatMemory chatMemory,
+                            SkillRegistry skillRegistry,
+                            ToolRegistry toolRegistry) {
         this.chatModel = chatModel;
         this.toolCallbackProvider = toolCallbackProvider;
         this.chatMemory = chatMemory;
+        this.skillRegistry = skillRegistry;
+        this.toolRegistry = toolRegistry;
         log.info("Agent [{}] 初始化完成", name());
     }
 
     /**
-     * Agent 名称标识，如 "weather-agent"
-     */
-    protected abstract String name();
-
-    /**
-     * Agent 功能描述
-     */
-    protected abstract String description();
-
-    /**
-     * 系统提示词（System Prompt）
-     * <p>
-     * 定义 Agent 的人格、职责、行为规则。
-     * 这是控制 Agent 行为的核心手段——LLM 会严格遵循 system prompt 的指令。
+     * 系统提示词（子类实现）
      */
     protected abstract String systemPrompt();
 
     /**
-     * 执行 Agent 逻辑
-     * <p>
-     * 完整流程：
-     * 1. 从请求中提取用户输入和 sessionId
-     * 2. 构建 ChatClient（挂载工具 + 会话记忆）
-     * 3. 构建用户提示词（引导 LLM 按格式输出）
-     * 4. 调用 LLM（Spring AI 自动处理工具调用）
-     * 5. 返回结果
-     *
-     * @param request 包含用户输入、sessionId、userId 的请求对象
-     * @return Agent 的回答（包含分析、数据、结论、建议）
+     * 构建完整的 system prompt：
+     * 1. 严格行为规范（最高优先级）
+     * 2. 子类 system prompt
+     * 3. Agent 声明的 Skill 扩展
+     * 4. 用户通过 / 命令选择的 Skill 扩展
+     */
+    protected String buildFullSystemPrompt(AgentContext context) {
+        // 严格行为规范放在最前面（最高优先级）
+        StringBuilder full = new StringBuilder(STRICT_BEHAVIOR_RULES);
+
+        // 子类的 system prompt
+        String agentPrompt = systemPrompt();
+        if (agentPrompt != null && !agentPrompt.isBlank()) {
+            full.append("\n\n").append(agentPrompt);
+        }
+
+        // Agent 声明的 Skill 扩展
+        if (skillRegistry != null && requiredSkills() != null && !requiredSkills().isEmpty()) {
+            String skillPrompt = skillRegistry.buildCombinedPrompt(requiredSkills());
+            if (!skillPrompt.isBlank()) {
+                full.append("\n\n").append(skillPrompt);
+            }
+        }
+
+        // 用户通过 / 命令选择的 Skill 扩展
+        if (context != null && context.getSkill() != null && !context.getSkill().isBlank()) {
+            String userSkillName = context.getSkill();
+            log.info("用户选择的 Skill: {}", userSkillName);
+            if (skillRegistry != null && skillRegistry.has(userSkillName)) {
+                String userSkillPrompt = skillRegistry.buildCombinedPrompt(List.of(userSkillName));
+                if (!userSkillPrompt.isBlank()) {
+                    full.append("\n\n").append(userSkillPrompt);
+                    log.info("已注入用户 Skill: {}", userSkillName);
+                }
+            } else {
+                log.warn("用户选择的 Skill 未找到: {}", userSkillName);
+            }
+        }
+
+        return full.toString();
+    }
+
+    /**
+     * 同步执行
      */
     @Override
-    public AgentResponse execute(AgentRequest request) {
-        String userInput = request.getInput();
-        String sessionId = request.getSessionId();
-        log.info("========== Agent [{}] 开始执行 ==========", name());
-        log.debug("用户输入: {}", userInput);
-        log.debug("会话ID: {}, 用户ID: {}", sessionId, request.getUserId());
+    public String execute(AgentContext context) {
+        String userInput = context.getOriginalInput();
+        String sessionId = context.getSessionId();
 
-        // ==================== 构建 ChatClient ====================
-        // 每次请求独立构建 ChatClient，原因：
-        // 1. 需要通过 sessionId 隔离不同会话的对话上下文
-        // 2. ChatClient.builder() 是轻量级操作（只存储引用，不发起网络请求）
-        // 3. 真正的 LLM 调用发生在 .call() 时
-        //
-        // defaultTools: 注册所有工具，LLM 可以决定调用哪些
-        // defaultAdvisors: 注册 MessageChatMemoryAdvisor，自动管理对话记忆
+        log.info("========== Agent [{}] 开始执行 ==========", name());
+        log.debug("用户输入: {}, 会话ID: {}, Skill: {}", userInput, sessionId, context.getSkill());
+
         ChatClient chatClient = ChatClient.builder(chatModel)
                 .defaultTools(toolCallbackProvider)
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
 
-        // ==================== 构建用户提示词 ====================
         String userPrompt = buildUserPrompt(userInput);
+        String sysPrompt = buildFullSystemPrompt(context);
 
-        // ==================== 调用 LLM ====================
-        // .system(): 设置系统提示词（Agent 人格 + 行为规则）
-        // .user(): 设置用户提示词（用户需求 + 输出格式引导）
-        // .advisors(): 传入 sessionId，让记忆 Advisor 知道当前是哪个会话
-        //   - chat_memory_conversation_id 是 Spring AI 约定的参数名
-        //   - MessageChatMemoryAdvisor 会用此 ID 存取对话历史
-        // .call(): 发起 LLM 调用
-        //   - Spring AI 自动处理：如果 LLM 返回 tool_calls，会自动执行工具并回传结果
-        log.info("调用 LLM，会话ID: {}，Spring AI 将自动处理工具调用...", sessionId);
-        ChatResponse chatResponse = chatClient.prompt()
-                .system(systemPrompt())
+        String response = chatClient.prompt()
+                .system(sysPrompt)
                 .user(userPrompt)
                 .advisors(a -> a.param("chat_memory_conversation_id", sessionId))
                 .call()
-                .chatResponse();
-
-        // ==================== 解析结果 ====================
-        String answer = null;
-        if (chatResponse != null) {
-            answer = Objects.requireNonNull(chatResponse.getResult()).getOutput().getText();
-        }
-        log.info("LLM 返回结果: {}", answer);
-
-        AgentResponse response = new AgentResponse();
-        response.setAnswer(answer);
+                .chatResponse()
+                .getResult()
+                .getOutput()
+                .getText();
 
         log.info("========== Agent [{}] 执行完成 ==========", name());
         return response;
     }
 
     /**
-     * 流式执行 Agent 逻辑（SSE，支持图片）
-     * <p>
-     * 与 execute() 类似，但使用 .stream() 替代 .call()，
-     * 返回 Flux<String>，每个元素是一小段文本，实现打字机效果。
-     * <p>
-     * 当请求包含图片时，构建多模态消息（文本 + 图片）发送给 LLM。
-     *
-     * @param request 完整请求对象（含文本 + 图片）
-     * @return Flux<String> 流式文本数据
+     * 流式执行
      */
-    public Flux<String> streamChat(AgentRequest request) {
-        String userInput = request.getInput();
-        String sessionId = request.getSessionId();
+    @Override
+    public Flux<String> executeStream(AgentContext context) {
+        String userInput = context.getOriginalInput();
+        String sessionId = context.getSessionId();
 
-        log.info("Agent [{}] 开始流式执行，会话ID: {}", name(), sessionId);
+        log.info("Agent [{}] 开始流式执行，会话ID: {}, Skill: {}", name(), sessionId, context.getSkill());
 
         ChatClient chatClient = ChatClient.builder(chatModel)
                 .defaultTools(toolCallbackProvider)
@@ -173,9 +275,10 @@ public abstract class AbstractAgent implements Agent {
                 .build();
 
         String userPrompt = buildUserPrompt(userInput);
+        String sysPrompt = buildFullSystemPrompt(context);
 
         return chatClient.prompt()
-                .system(systemPrompt())
+                .system(sysPrompt)
                 .user(userPrompt)
                 .advisors(a -> a.param("chat_memory_conversation_id", sessionId))
                 .stream()
@@ -183,36 +286,19 @@ public abstract class AbstractAgent implements Agent {
     }
 
     /**
-     * 构建用户提示词
-     * <p>
-     * 引导 LLM 按照固定格式输出，包含：
-     * - 【分析】：用户意图分析
-     * - 【数据】：工具查询结果（如果调用了工具）
-     * - 【结论】：核心推荐
-     * - 【建议】：实用的行动建议
-     *
-     * @param userInput 用户原始输入
-     * @return 格式化后的用户提示词
+     * 构建用户提示词（强制要求区分执行和建议）
      */
     protected String buildUserPrompt(String userInput) {
         return """
                 用户需求: %s
-                
-                你是一位经验丰富的专业顾问。
-                
-                你的目标不是回答问题，而是真正帮助用户解决问题。
-                
-                工作原则：
-                
-                - 首先理解用户真正想解决的问题，而不是仅回答字面意思。
-                - 当需要实时信息时，主动调用工具获取最新数据，不要凭空猜测。
-                - 工具返回的数据应自然融入回答，用自己的语言解释数据背后的含义，而不是机械罗列。
-                - 回答应流畅、自然、有温度，像人与人交流，而不是生成报告。
-                - 优先给出明确的建议，而不是把所有可能性都列给用户自行判断。
-                - 如果存在更好的方案，应主动推荐，并解释推荐理由。
-                - 不要暴露你的思考过程，不要使用"分析""推理""工具返回"等措辞。
-                - 使用 Markdown 提高可读性，但避免为了格式而堆砌标题或固定模板。
-                - 如果当前话题适合增加一点轻松氛围，可调用 search_meme 获取一个贴切的表情包；如果不适合，则不要调用。
+
+                请严格按照用户需求完成任务。
+
+                输出格式要求（必须严格遵守）：
+                1. 【执行内容】- 只包含你真正执行的内容（修改了哪些文件、哪些代码）
+                2. 【建议】- 如果发现可以优化的地方，放在这里（绝不能自动执行）
+
+                如果没有建议，可以省略【建议】部分。
                 """.formatted(userInput);
     }
 }

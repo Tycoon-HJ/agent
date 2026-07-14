@@ -48,6 +48,22 @@
           <span v-if="isStreaming && displayedText" class="cursor-blink">▋</span>
         </div>
 
+        <!-- Confirmation Banner -->
+        <div v-if="message.needsConfirmation && !isStreaming" class="confirmation-banner">
+          <div class="confirmation-icon">⚠️</div>
+          <div class="confirmation-content">
+            <div class="confirmation-title">需要确认</div>
+            <div class="confirmation-message">{{ message.confirmationMessage || '此操作需要您的确认' }}</div>
+            <div v-if="message.pendingAction" class="confirmation-action">
+              <strong>待执行操作：</strong>{{ message.pendingAction }}
+            </div>
+          </div>
+          <button class="confirmation-btn" @click="confirm" :disabled="isConfirming">
+            <span v-if="isConfirming" class="confirming-spinner"></span>
+            <span v-else>确认继续</span>
+          </button>
+        </div>
+
         <!-- Actions -->
         <div v-if="!isStreaming" class="ai-actions">
           <button class="action-btn" @click="copyContent" title="Copy">
@@ -152,13 +168,14 @@ interface Props {
 }
 
 const { message, isStreaming = false } = defineProps<Props>()
-const emit = defineEmits(['retry', 'like', 'dislike', 'favorite', 'share'])
+const emit = defineEmits(['retry', 'like', 'dislike', 'favorite', 'share', 'confirm'])
 
 const liked = ref(!!(message as any)?.liked)
 const disliked = ref(!!(message as any)?.disliked)
 const favorite = ref(!!(message as any)?.favorite)
 const previewUrl = ref('')
 const displayedText = ref(message.content || '')
+const isConfirming = ref(false)
 let streamTimer: ReturnType<typeof window.setInterval> | null = null
 
 watch(
@@ -243,6 +260,19 @@ function share() {
     console.warn('Share failed', e)
   }
   emit('share', message.id)
+}
+
+async function confirm() {
+  if (!message.confirmationId || isConfirming.value) return
+  isConfirming.value = true
+  try {
+    emit('confirm', message.confirmationId)
+  } finally {
+    // Reset after a delay (parent will handle the actual confirmation)
+    setTimeout(() => {
+      isConfirming.value = false
+    }, 2000)
+  }
 }
 </script>
 
@@ -489,6 +519,100 @@ function share() {
   gap: 4px;
   margin-top: 8px;
   padding-left: 4px;
+}
+
+/* Confirmation Banner */
+.confirmation-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 16px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 14px;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.confirmation-banner:hover {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.confirmation-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.confirmation-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.confirmation-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.confirmation-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.confirmation-action {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.confirmation-btn {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border: none;
+  background: var(--gradient-primary);
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+}
+
+.confirmation-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
+}
+
+.confirmation-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.confirmation-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.confirming-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .action-btn {

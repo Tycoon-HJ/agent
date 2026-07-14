@@ -81,6 +81,7 @@
                     @dislike="handleMessageDislike"
                     @favorite="handleMessageFavorite"
                     @share="handleMessageShare"
+                    @confirm="handleConfirm"
                   />
                 </DynamicScrollerItem>
               </template>
@@ -110,6 +111,7 @@
           @stop="stopGeneration"
           @add-files="addFileFromExternal"
           @paste="handlePaste"
+          @skill-selected="onSkillSelected"
         />
       </div>
     </main>
@@ -172,6 +174,14 @@ interface UploadedDocument {
 const uploadedImages = ref<UploadedImage[]>([])
 const uploadedDocuments = ref<UploadedDocument[]>([])
 
+interface Skill {
+  name: string
+  description: string
+  requiredTools: string[]
+}
+
+const selectedSkill = ref<Skill | null>(null)
+
 // ── Computed ──
 const currentSession = computed(() =>
   sessions.value.find(s => s.sessionId === currentSessionId.value)
@@ -200,6 +210,10 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function onSkillSelected(skill: Skill | null) {
+  selectedSkill.value = skill
 }
 
 // ── Session Management ──
@@ -412,19 +426,21 @@ async function sendMessage(): Promise<void> {
     currentSession.value!.title = title.slice(0, 20) + (title.length > 20 ? '...' : '')
   }
 
+  const skillName = selectedSkill.value?.name
   inputText.value = ''
   uploadedImages.value = []
   uploadedDocuments.value = []
+  selectedSkill.value = null
   saveSessions()
   scrollToBottom()
-  startSSE(text, imageUrls, fileDataList)
+  startSSE(text, imageUrls, fileDataList, skillName)
 }
 
-function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = []): void {
-  startSSEInternal(text, imageUrls, fileDataList)
+function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], skillName?: string): void {
+  startSSEInternal(text, imageUrls, fileDataList, undefined, skillName)
 }
 
-function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], existingAiMessageId?: string): void {
+function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], existingAiMessageId?: string, skillName?: string): void {
   const sessionId = currentSessionId.value
 
   let aiMessage: ChatMessageType | undefined
@@ -444,7 +460,7 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
   isStreaming.value = true
   let fullText = ''
 
-  const body = JSON.stringify({ input: text, images: imageUrls, files: fileDataList })
+  const body = JSON.stringify({ input: text, images: imageUrls, files: fileDataList, skill: skillName })
   const abortController = new AbortController()
 
   fetch(`/api/ask/stream?sessionId=${encodeURIComponent(sessionId)}`, {
@@ -479,6 +495,23 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
           if (data) {
             try {
               const parsed = JSON.parse(data)
+              // Handle confirmation event
+              if (parsed.type === 'confirmation' && parsed.confirmationId) {
+                console.log('Received confirmation event:', parsed)
+                // Update the message with confirmation fields
+                aiMessage!.needsConfirmation = true
+                aiMessage!.confirmationId = parsed.confirmationId
+                aiMessage!.confirmationMessage = parsed.confirmationMessage
+                aiMessage!.partialResult = parsed.partialResult
+                aiMessage!.pendingAction = parsed.pendingAction
+                aiMessage!.content = (parsed.partialResult || '') +
+                  '\n\n---\n\n⚠️ **需要确认**\n\n' +
+                  (parsed.confirmationMessage || '此操作需要您的确认')
+                currentSession.value!.updatedAt = Date.now()
+                scrollToBottom()
+                finishStreaming()
+                return
+              }
               if (parsed.type === 'image' && parsed.url) {
                 if (!aiMessage!.images) aiMessage!.images = []
                 aiMessage!.images.push(parsed.url)
@@ -577,6 +610,53 @@ function handleMessageFavorite(payload: { id: string; value: boolean }) {
 
 function handleMessageShare(messageId: string) {
   console.debug('share message', messageId)
+}
+
+async function handleConfirm(confirmationId: string): Promise<void> {
+  console.log('Confirming:', confirmationId)
+  isStreaming.value = true
+
+  try {
+    const response = await fetch(`/api/confirm/${confirmationId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    console.log('Confirmation result:', result)
+
+    // Find and update the message with the confirmation result
+    const msgs = currentSession.value!.messages
+    const confirmMsg = msgs.find(m => m.confirmationId === confirmationId)
+    if (confirmMsg) {
+      // Update the message with the full result
+      confirmMsg.content = result.answer || '操作已完成'
+      confirmMsg.needsConfirmation = false
+      confirmMsg.confirmationId = undefined
+      confirmMsg.confirmationMessage = undefined
+      confirmMsg.partialResult = undefined
+      confirmMsg.pendingAction = undefined
+      saveSessions()
+    }
+  } catch (e) {
+    console.error('Confirmation failed:', e)
+    // Show error message
+    const errorMsg: ChatMessageType = {
+      id: generateId(),
+      role: 'assistant',
+      content: '确认失败: ' + (e instanceof Error ? e.message : String(e)),
+      timestamp: Date.now(),
+    }
+    currentSession.value!.messages.push(errorMsg)
+    saveSessions()
+  } finally {
+    isStreaming.value = false
+    scrollToBottom()
+  }
 }
 
 // ── Persistence ──

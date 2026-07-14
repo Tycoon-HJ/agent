@@ -43,6 +43,13 @@ public class AgentRequest {
     private List<FileData> files;
 
     /**
+     * 用户选择的 Skill 名称（可选）
+     * 前端通过 / 命令选择 Skill 后，通过此字段传递给后端。
+     * 后端会将 Skill 的 system prompt addon 注入到 Agent 的 system prompt 中。
+     */
+    private String skill;
+
+    /**
      * 无参构造（用于 setter 方式构建）
      */
     public AgentRequest() {
@@ -94,5 +101,13 @@ public class AgentRequest {
 
     public void setFiles(List<FileData> files) {
         this.files = files;
+    }
+
+    public String getSkill() {
+        return skill;
+    }
+
+    public void setSkill(String skill) {
+        this.skill = skill;
     }
 }

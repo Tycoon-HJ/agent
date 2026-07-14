@@ -17,3 +17,10 @@ spring:
 server:
   tomcat:
     max-http-form-post-size: 20MB
+
+# Agent 配置
+agent:
+  skills:
+    # Skill 文件目录（相对于项目根目录，或绝对路径）
+    # 目录中的 .md 文件会被自动加载为 Skill
+    directory: ./skills

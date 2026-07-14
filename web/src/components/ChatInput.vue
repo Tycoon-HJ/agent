@@ -14,6 +14,35 @@
       </div>
     </Transition>
 
+    <!-- Skill Menu -->
+    <Transition name="menu">
+      <div v-if="showSkillMenu" class="skill-menu">
+        <div class="skill-menu-header">
+          <span class="skill-menu-title">Skills</span>
+          <span class="skill-menu-hint">Select a skill to use</span>
+        </div>
+        <div class="skill-menu-list">
+          <button
+            v-for="(skill, index) in filteredSkills"
+            :key="skill.name"
+            class="skill-menu-item"
+            :class="{ active: index === selectedSkillIndex }"
+            @click="selectSkill(skill)"
+            @mouseenter="selectedSkillIndex = index"
+          >
+            <div class="skill-item-icon">⚡</div>
+            <div class="skill-item-info">
+              <div class="skill-item-name">{{ skill.name }}</div>
+              <div class="skill-item-desc">{{ skill.description }}</div>
+            </div>
+          </button>
+          <div v-if="filteredSkills.length === 0" class="skill-menu-empty">
+            No matching skills found
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Input Bar -->
     <div
       class="input-bar"
@@ -33,14 +62,20 @@
         <input ref="fileInput" class="visually-hidden" type="file" multiple @change="onFilesSelected" />
       </div>
 
+      <!-- Selected Skill Badge -->
+      <div v-if="selectedSkill" class="selected-skill-badge">
+        <span class="skill-badge-name">{{ selectedSkill.name }}</span>
+        <button class="skill-badge-remove" @click="removeSkill">×</button>
+      </div>
+
       <!-- Textarea -->
       <textarea
         ref="textarea"
         v-model="model"
         :placeholder="placeholder"
-        @keydown.enter.exact.prevent="onEnter"
+        @keydown="onKeydown"
         @focus="isFocused = true"
-        @blur="isFocused = false"
+        @blur="onBlur"
         @paste="onPaste"
         :disabled="isStreaming"
         rows="1"
@@ -78,29 +113,21 @@
 
     <!-- Input Hint -->
     <div class="input-hint">
-      <span>Press <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new line</span>
+      <span>
+        <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>/</kbd> skills
+      </span>
     </div>
-
-    <!-- Model Menu -->
-    <Transition name="menu">
-      <div v-if="showModelMenu" class="model-menu">
-        <button
-          v-for="m in models"
-          :key="m"
-          class="model-menu-item"
-          :class="{ active: m === currentModel }"
-          @click="selectModel(m)"
-        >
-          <span class="model-menu-dot" :class="{ active: m === currentModel }"></span>
-          {{ m }}
-        </button>
-      </div>
-    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+
+interface Skill {
+  name: string
+  description: string
+  requiredTools: string[]
+}
 
 const props = defineProps<{
   modelValue: string
@@ -109,16 +136,19 @@ const props = defineProps<{
   canSend: boolean
 }>()
 
-const emit = defineEmits(['update:modelValue', 'send', 'stop', 'add-files', 'paste'])
+const emit = defineEmits(['update:modelValue', 'send', 'stop', 'add-files', 'paste', 'skill-selected'])
 
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 const isFocused = ref(false)
-const showModelMenu = ref(false)
 
-const models = ['GPT-5', 'Claude', 'DeepSeek', 'Gemini']
-const currentModel = ref('Claude')
+// Skill related state
+const skills = ref<Skill[]>([])
+const showSkillMenu = ref(false)
+const selectedSkillIndex = ref(0)
+const selectedSkill = ref<Skill | null>(null)
+const skillSearchQuery = ref('')
 
 const model = computed({
   get: () => props.modelValue,
@@ -126,6 +156,28 @@ const model = computed({
 })
 
 const hasContent = computed(() => props.modelValue.trim().length > 0)
+
+// Filter skills based on search query
+const filteredSkills = computed(() => {
+  if (!skillSearchQuery.value) return skills.value
+  const query = skillSearchQuery.value.toLowerCase()
+  return skills.value.filter(s =>
+    s.name.toLowerCase().includes(query) ||
+    s.description.toLowerCase().includes(query)
+  )
+})
+
+// Fetch skills from backend
+async function fetchSkills() {
+  try {
+    const response = await fetch('/api/skills')
+    if (response.ok) {
+      skills.value = await response.json()
+    }
+  } catch (e) {
+    console.error('Failed to fetch skills:', e)
+  }
+}
 
 // Auto resize textarea
 watch(() => props.modelValue, () => {
@@ -135,6 +187,10 @@ watch(() => props.modelValue, () => {
       textarea.value.style.height = Math.min(textarea.value.scrollHeight, 160) + 'px'
     }
   })
+})
+
+onMounted(() => {
+  fetchSkills()
 })
 
 function triggerFileSelect() {
@@ -161,26 +217,103 @@ function onPaste(e: ClipboardEvent) {
 
 function onDragEnter() { isDragging.value = true }
 function onDragLeave() { isDragging.value = false }
-function onEnter() { emit('send') }
 
-function toggleModelMenu() {
-  showModelMenu.value = !showModelMenu.value
-}
-
-function selectModel(m: string) {
-  currentModel.value = m
-  showModelMenu.value = false
-}
-
-// Close model menu on click outside
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement
-    if (!target.closest('.model-selector') && !target.closest('.model-menu')) {
-      showModelMenu.value = false
+function onKeydown(e: KeyboardEvent) {
+  // Handle skill menu navigation
+  if (showSkillMenu.value) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      selectedSkillIndex.value = Math.min(selectedSkillIndex.value + 1, filteredSkills.value.length - 1)
+      return
     }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      selectedSkillIndex.value = Math.max(selectedSkillIndex.value - 1, 0)
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (filteredSkills.value.length > 0) {
+        selectSkill(filteredSkills.value[selectedSkillIndex.value])
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      showSkillMenu.value = false
+      return
+    }
+  }
+
+  // Handle Enter to send
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    emit('send')
+  }
+}
+
+function onBlur() {
+  isFocused.value = false
+  // Delay hiding menu to allow click
+  setTimeout(() => {
+    showSkillMenu.value = false
+  }, 200)
+}
+
+// Watch for '/' input to show skill menu
+watch(() => props.modelValue, (newVal) => {
+  // Check if user just typed '/'
+  if (newVal === '/' || (newVal.endsWith('/') && !newVal.endsWith('//'))) {
+    showSkillMenu.value = true
+    selectedSkillIndex.value = 0
+    skillSearchQuery.value = ''
+  } else if (showSkillMenu.value) {
+    // Extract search query after '/'
+    const slashIndex = newVal.lastIndexOf('/')
+    if (slashIndex >= 0) {
+      skillSearchQuery.value = newVal.substring(slashIndex + 1)
+    } else {
+      showSkillMenu.value = false
+    }
+  }
+})
+
+function selectSkill(skill: Skill) {
+  selectedSkill.value = skill
+  showSkillMenu.value = false
+  // Clear the '/' and search query from input
+  const slashIndex = props.modelValue.lastIndexOf('/')
+  if (slashIndex >= 0) {
+    emit('update:modelValue', props.modelValue.substring(0, slashIndex))
+  }
+  // Notify parent about skill selection
+  emit('skill-selected', skill)
+  // Focus back to textarea
+  nextTick(() => {
+    textarea.value?.focus()
   })
 }
+
+function removeSkill() {
+  selectedSkill.value = null
+  emit('skill-selected', null)
+}
+
+// Close skill menu on click outside
+function handleClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.skill-menu') && !target.closest('.input-container')) {
+    showSkillMenu.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style scoped>
@@ -266,6 +399,42 @@ if (typeof window !== 'undefined') {
   color: var(--text-secondary);
 }
 
+/* Selected Skill Badge */
+.selected-skill-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(99,102,241,0.15);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.skill-badge-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-light);
+}
+
+.skill-badge-remove {
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+}
+
+.skill-badge-remove:hover {
+  color: var(--error);
+}
+
 /* Textarea */
 .input-bar textarea {
   flex: 1;
@@ -296,28 +465,6 @@ if (typeof window !== 'undefined') {
   align-items: center;
   gap: 6px;
   padding-right: 4px;
-}
-
-/* Model Selector */
-.model-selector {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  user-select: none;
-}
-
-.model-selector:hover {
-  background: var(--bg-surface-hover);
-}
-
-.model-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 
 /* Send Button */
@@ -394,57 +541,106 @@ if (typeof window !== 'undefined') {
   font-size: 10px;
 }
 
-/* Model Menu */
-.model-menu {
+/* Skill Menu */
+.skill-menu {
   position: absolute;
   bottom: calc(100% + 8px);
-  right: 8px;
+  left: 0;
+  right: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
   border-radius: 16px;
-  padding: 6px;
-  min-width: 160px;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   z-index: 20;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
 }
 
-.model-menu-item {
+.skill-menu-header {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.skill-menu-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.skill-menu-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.skill-menu-list {
+  overflow-y: auto;
+  padding: 6px;
+  flex: 1;
+}
+
+.skill-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
   cursor: pointer;
   border-radius: 10px;
   transition: all var(--duration-fast) var(--ease-out);
+  text-align: left;
 }
 
-.model-menu-item:hover {
+.skill-menu-item:hover,
+.skill-menu-item.active {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 
-.model-menu-item.active {
-  color: var(--primary-light);
+.skill-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(99,102,241,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
-.model-menu-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  transition: all var(--duration-fast) var(--ease-out);
+.skill-item-info {
+  flex: 1;
+  min-width: 0;
 }
 
-.model-menu-dot.active {
-  background: var(--primary);
-  box-shadow: 0 0 8px rgba(99,102,241,0.5);
+.skill-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.skill-item-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-menu-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 /* Transitions */

@@ -1,9 +1,9 @@
 package org.hai.work.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.hai.work.agent.core.RouterAgent;
 import org.hai.work.agent.dto.AgentRequest;
 import org.hai.work.agent.dto.AgentResponse;
+import org.hai.work.orchestrator.Orchestrator;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.TaskScheduler;
@@ -30,7 +30,7 @@ import java.util.concurrent.ScheduledFuture;
 public class ScheduledTaskManager {
 
     private final TaskScheduler taskScheduler;
-    private final RouterAgent routerAgent;
+    private final Orchestrator orchestrator;
     private final NotificationService notificationService;
 
     /**
@@ -44,10 +44,10 @@ public class ScheduledTaskManager {
     private final Map<String, TaskInfo> taskInfoMap = new ConcurrentHashMap<>();
 
     public ScheduledTaskManager(@Qualifier("taskScheduler") TaskScheduler taskScheduler,
-                                @Lazy RouterAgent routerAgent,
+                                @Lazy Orchestrator orchestrator,
                                 NotificationService notificationService) {
         this.taskScheduler = taskScheduler;
-        this.routerAgent = routerAgent;
+        this.orchestrator = orchestrator;
         this.notificationService = notificationService;
         log.info("ScheduledTaskManager 初始化完成");
     }
@@ -197,7 +197,7 @@ public class ScheduledTaskManager {
             request.setSessionId("scheduled-" + taskId);
             request.setUserId(userId);
 
-            AgentResponse response = routerAgent.execute(request);
+            AgentResponse response = orchestrator.executeSimple(request);
             String answer = response.getAnswer();
             log.info("定时任务执行完成: taskId={}, 结果: {}", taskId, answer);
 
