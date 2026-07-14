@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -20,6 +20,10 @@ const marked = new Marked({
   breaks: true,
 })
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 marked.use({
   renderer: {
     code({ text, lang }: { text: string; lang?: string }): string {
@@ -34,8 +38,9 @@ marked.use({
         highlighted = hljs.highlightAuto(text).value
       }
 
-      const langLabel = lang || 'code'
-      return `<div class="code-block"><div class="code-header"><span class="code-lang">${langLabel}</span><button class="code-copy" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('code').textContent)">Copy</button></div><pre><code class="hljs language-${lang || 'auto'}">${highlighted}</code></pre></div>`
+      const safeLangLabel = escapeHtml(lang || 'code')
+      const safeLang = escapeHtml(lang || 'auto')
+      return `<div class="code-block"><div class="code-header"><span class="code-lang">${safeLangLabel}</span><button class="code-copy" data-copy-target>Copy</button></div><pre><code class="hljs language-${safeLang}">${highlighted}</code></pre></div>`
     },
   },
 })
@@ -45,8 +50,26 @@ const renderedHtml = computed(() => {
   const rawHtml = marked.parse(props.content, { async: false }) as string
   return DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: ['code', 'pre', 'span', 'div'],
-    ADD_ATTR: ['class', 'hljs', 'onclick'],
+    ADD_ATTR: ['class', 'hljs', 'data-copy-target'],
   })
+})
+
+// Delegated click handler for code copy buttons (replaces inline onclick)
+function handleCopyClick(e: Event) {
+  const btn = (e.target as HTMLElement).closest('[data-copy-target]')
+  if (!btn) return
+  const code = btn.closest('.code-block')?.querySelector('code')
+  if (code) {
+    navigator.clipboard.writeText(code.textContent || '').catch(() => {})
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleCopyClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleCopyClick)
 })
 </script>
 

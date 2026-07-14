@@ -119,6 +119,11 @@ public class ImageExplainTool implements Tool {
     public String execute(String args) {
         log.info("ImageExplainTool 开始执行，参数: {}", args);
 
+        // 校验 API Key
+        if (API_KEY == null || API_KEY.isBlank()) {
+            return "错误：AGNES_API_KEY 环境变量未设置，无法调用图像解释服务";
+        }
+
         try {
             // 解析 JSON 参数
             JSONObject params = JSONUtil.parseObj(args);

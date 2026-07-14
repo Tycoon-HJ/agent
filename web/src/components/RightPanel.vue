@@ -2,7 +2,7 @@
   <aside class="agent-panel">
     <!-- Header -->
     <div class="panel-header">
-      <h3 class="panel-title">Agent</h3>
+      <h3 class="panel-title">Agent <span style="font-size:10px;color:var(--text-muted);font-weight:400">(Demo)</span></h3>
       <div class="panel-status">
         <span class="status-dot"></span>
         <span class="status-text">Online</span>

@@ -1,5 +1,7 @@
 package org.hai.work.orchestrator.workflow;
 
+import lombok.Data;
+import lombok.Getter;
 import org.hai.work.context.AgentContext;
 
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.Map;
  * - condition 非空时，解析表达式判断是否执行
  * - 表达式可引用 Context 变量和前置 Step 的结果
  */
+@Data
 public class Step {
 
     private int id;
@@ -55,12 +58,12 @@ public class Step {
 
         // stepN.success / stepN.failed
         if (expr.matches("step\\d+\\.success")) {
-            int stepId = Integer.parseInt(expr.substring(4, expr.indexOf('.')));
+            int stepId = Integer.parseInt(expr.substring(expr.indexOf("step") + 4, expr.indexOf('.')));
             StepResult result = context.getStepResult(stepId);
             return result != null && result.isSuccess();
         }
         if (expr.matches("step\\d+\\.failed")) {
-            int stepId = Integer.parseInt(expr.substring(4, expr.indexOf('.')));
+            int stepId = Integer.parseInt(expr.substring(expr.indexOf("step") + 4, expr.indexOf('.')));
             StepResult result = context.getStepResult(stepId);
             return result != null && result.isTerminal();
         }
@@ -133,29 +136,4 @@ public class Step {
 
         return resolved;
     }
-
-    // ==================== Getter/Setter ====================
-
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
-    public String getAgentName() { return agentName; }
-    public void setAgentName(String agentName) { this.agentName = agentName; }
-    public String getToolName() { return toolName; }
-    public void setToolName(String toolName) { this.toolName = toolName; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getInputTemplate() { return inputTemplate; }
-    public void setInputTemplate(String inputTemplate) { this.inputTemplate = inputTemplate; }
-    public List<Integer> getDependsOn() { return dependsOn; }
-    public void setDependsOn(List<Integer> dependsOn) { this.dependsOn = dependsOn; }
-    public String getCondition() { return condition; }
-    public void setCondition(String condition) { this.condition = condition; }
-    public int getMaxRetries() { return maxRetries; }
-    public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
-    public long getTimeoutMs() { return timeoutMs; }
-    public void setTimeoutMs(long timeoutMs) { this.timeoutMs = timeoutMs; }
-    public boolean isCritical() { return critical; }
-    public void setCritical(boolean critical) { this.critical = critical; }
-    public Map<String, String> getToolArgs() { return toolArgs; }
-    public void setToolArgs(Map<String, String> toolArgs) { this.toolArgs = toolArgs; }
 }

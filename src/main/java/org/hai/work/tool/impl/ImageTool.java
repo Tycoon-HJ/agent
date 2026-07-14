@@ -52,6 +52,10 @@ public class ImageTool {
     public String textToImage(String prompt, String size) {
         log.info("执行文生图: prompt={}, size={}", prompt, size);
 
+        if (API_KEY == null || API_KEY.isBlank()) {
+            return "错误：AGNES_API_KEY 环境变量未设置，无法调用图像生成服务";
+        }
+
         // 参数校验
         if (prompt == null || prompt.isBlank()) {
             return "错误：prompt 参数不能为空，请描述要生成的图像内容";

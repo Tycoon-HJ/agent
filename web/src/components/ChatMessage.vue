@@ -1,6 +1,6 @@
 <template>
   <div
-    class="message fade-in-up"
+    class="message"
     :class="message.role === 'user' ? 'message-user' : 'message-ai'"
   >
     <!-- AI: Avatar + Content -->
@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import type { ChatMessage as ChatMessageModel } from '../types/chat'
 import MarkdownRender from './MarkdownRender.vue'
 
@@ -170,13 +170,20 @@ interface Props {
 const { message, isStreaming = false } = defineProps<Props>()
 const emit = defineEmits(['retry', 'like', 'dislike', 'favorite', 'share', 'confirm'])
 
-const liked = ref(!!(message as any)?.liked)
-const disliked = ref(!!(message as any)?.disliked)
-const favorite = ref(!!(message as any)?.favorite)
+const liked = ref(!!message?.liked)
+const disliked = ref(!!message?.disliked)
+const favorite = ref(!!message?.favorite)
 const previewUrl = ref('')
 const displayedText = ref(message.content || '')
 const isConfirming = ref(false)
 let streamTimer: ReturnType<typeof window.setInterval> | null = null
+
+onUnmounted(() => {
+  if (streamTimer) {
+    window.clearInterval(streamTimer)
+    streamTimer = null
+  }
+})
 
 watch(
   () => message.content,
@@ -218,6 +225,7 @@ function downloadImage(url: string, index: number) {
   link.href = url
   link.download = `ai-image-${Date.now()}-${index}.png`
   link.target = '_blank'
+  link.rel = 'noopener noreferrer'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)

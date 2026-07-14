@@ -37,7 +37,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(handler, "/ws/notifications")
                 .addInterceptors(new UserIdHandshakeInterceptor())
-                .setAllowedOrigins("*");
+                .setAllowedOrigins("http://localhost:*", "http://127.0.0.1:*");
     }
 
     /**

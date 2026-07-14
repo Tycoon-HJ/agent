@@ -32,6 +32,12 @@ export interface ChatMessage {
     partialResult?: string
     /** 待执行的操作描述 */
     pendingAction?: string
+    /** 是否已点赞 */
+    liked?: boolean
+    /** 是否已踩 */
+    disliked?: boolean
+    /** 是否已收藏 */
+    favorite?: boolean
 }
 
 /** 会话信息 */

@@ -117,6 +117,10 @@ public class SearchTool implements Tool {
     public String execute(String args) {
         log.info("SearchTool 开始执行，参数: {}", args);
 
+        if (API_KEY == null || API_KEY.isBlank()) {
+            return "错误：TAVILY_API_KEY 环境变量未设置，无法执行网络搜索";
+        }
+
         try {
             // 解析 JSON 参数
             JSONObject params = JSONUtil.parseObj(args);

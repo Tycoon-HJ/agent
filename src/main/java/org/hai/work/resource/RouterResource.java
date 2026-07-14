@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.hai.work.agent.dto.AgentRequest;
 import org.hai.work.agent.dto.AgentResponse;
+import org.hai.work.context.AgentContext;
 import org.hai.work.orchestrator.Orchestrator;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
+import jakarta.annotation.PreDestroy;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +38,11 @@ public class RouterResource {
     public RouterResource(Orchestrator orchestrator, ObjectMapper objectMapper) {
         this.orchestrator = orchestrator;
         this.objectMapper = objectMapper;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executorService.shutdown();
     }
 
     /**
@@ -111,6 +118,8 @@ public class RouterResource {
 
         // 发送到 SSE
         String finalSessionId = sessionId;
+        // 提前创建 Context，确保流式确认时能保存完整的执行状态
+        AgentContext streamContext = orchestrator.createContext(request);
         executorService.submit(() -> {
             try {
                 stream
@@ -120,7 +129,7 @@ public class RouterResource {
                                 if (chunk.contains(Orchestrator.PENDING_CONFIRMATION_MARKER)) {
                                     // 解析并发送确认事件
                                     AgentResponse confirmResponse = orchestrator.handlePendingConfirmation(
-                                            orchestrator.createContext(request), "unknown", chunk);
+                                            streamContext, "unknown", chunk);
                                     String confirmJson = objectMapper.writeValueAsString(java.util.Map.of(
                                             "type", "confirmation",
                                             "confirmationId", confirmResponse.getConfirmationId(),
@@ -157,9 +166,8 @@ public class RouterResource {
             }
         });
 
-        String finalSessionId1 = sessionId;
         emitter.onTimeout(() -> {
-            log.warn("SSE 超时: sessionId={}", finalSessionId1);
+            log.warn("SSE 超时: sessionId={}", finalSessionId);
             emitter.complete();
         });
 
@@ -192,7 +200,10 @@ public class RouterResource {
 
     private String sanitize(String input) {
         if (input == null) return "null";
-        if (input.length() <= MAX_LOG_INPUT_LENGTH) return input;
-        return input.substring(0, MAX_LOG_INPUT_LENGTH) + "... (truncated, total=" + input.length() + ")";
+        // 去除控制字符、ANSI 转义码、换行符，防止日志注入
+        String cleaned = input.replaceAll("[\\x00-\\x1f\\x7f]", "")
+                .replaceAll("\\x1b\\[[0-9;]*[a-zA-Z]", "");
+        if (cleaned.length() <= MAX_LOG_INPUT_LENGTH) return cleaned;
+        return cleaned.substring(0, MAX_LOG_INPUT_LENGTH) + "... (truncated, total=" + cleaned.length() + ")";
     }
 }

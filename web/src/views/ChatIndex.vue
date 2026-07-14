@@ -33,12 +33,11 @@
           <h2 class="header-title">{{ currentSession?.title || 'New Chat' }}</h2>
         </div>
         <div class="header-right">
-          <span class="header-id">{{ currentSessionId }}</span>
         </div>
       </header>
 
       <!-- Messages or Welcome -->
-      <div ref="messageListRef" class="chat-body" @scroll.passive="onMessageListScroll">
+      <div ref="messageListRef" class="chat-body">
         <!-- Welcome Screen -->
         <div v-if="currentMessages.length === 0" class="welcome">
           <div class="welcome-logo">
@@ -65,27 +64,18 @@
         <!-- Message List -->
         <div v-else class="messages-container">
           <div class="messages-inner">
-            <DynamicScroller
-              :items="currentMessages"
-              key-field="id"
-              class="virtual-scroller"
-              :min-item-size="80"
-            >
-              <template #default="{ item }">
-                <DynamicScrollerItem :item="item" :key="item.id">
-                  <ChatMessage
-                    :message="item"
-                    :is-streaming="isStreaming && item.id === streamingMessageId"
-                    @retry="handleRetry"
-                    @like="handleMessageLike"
-                    @dislike="handleMessageDislike"
-                    @favorite="handleMessageFavorite"
-                    @share="handleMessageShare"
-                    @confirm="handleConfirm"
-                  />
-                </DynamicScrollerItem>
-              </template>
-            </DynamicScroller>
+            <ChatMessage
+              v-for="item in currentMessages"
+              :key="item.id"
+              :message="item"
+              :is-streaming="isStreaming && item.id === streamingMessageId"
+              @retry="handleRetry"
+              @like="handleMessageLike"
+              @dislike="handleMessageDislike"
+              @favorite="handleMessageFavorite"
+              @share="handleMessageShare"
+              @confirm="handleConfirm"
+            />
           </div>
         </div>
       </div>
@@ -120,14 +110,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useWebSocket } from '../composables/useWebSocket'
 import type { ChatMessage as ChatMessageType, ChatSession } from '../types/chat'
 import ChatMessage from '../components/ChatMessage.vue'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatInput from '../components/ChatInput.vue'
 import UploadPreview from '../components/UploadPreview.vue'
-import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 
 // ── Constants ──
 const userId = 'default-user'
@@ -152,7 +141,6 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const streamingMessageId = ref('')
 const messageListRef = ref<HTMLElement | null>(null)
-const visibleCount = ref(200)
 let abortControllerRef: AbortController | null = null
 let wsDisconnect: (() => void) | null = null
 
@@ -237,7 +225,6 @@ function switchSession(sessionId: string): void {
   uploadedDocuments.value = []
   currentSessionId.value = sessionId
   sidebarOpen.value = false
-  visibleCount.value = 200
   saveSessions()
 }
 
@@ -403,6 +390,8 @@ async function sendMessage(): Promise<void> {
   if ((!text && !hasImages && !hasFiles) || isStreaming.value) return
 
   if (!currentSession.value) createNewSession()
+  const session = currentSession.value
+  if (!session) return
 
   const imageUrls: string[] = uploadedImages.value.map(img => img.preview)
   const fileDataList = uploadedDocuments.value.map(doc => ({
@@ -418,12 +407,12 @@ async function sendMessage(): Promise<void> {
     files: fileDataList.length > 0 ? fileDataList : undefined,
   }
 
-  currentSession.value!.messages.push(userMessage)
-  currentSession.value!.updatedAt = Date.now()
+  session.messages.push(userMessage)
+  session.updatedAt = Date.now()
 
-  if (currentSession.value!.messages.length === 1) {
+  if (session.messages.length === 1) {
     const title = text || (hasFiles ? 'File Analysis' : 'Image Chat')
-    currentSession.value!.title = title.slice(0, 20) + (title.length > 20 ? '...' : '')
+    session.title = title.slice(0, 20) + (title.length > 20 ? '...' : '')
   }
 
   const skillName = selectedSkill.value?.name
@@ -443,9 +432,12 @@ function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: 
 function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], existingAiMessageId?: string, skillName?: string): void {
   const sessionId = currentSessionId.value
 
+  const sseSession = currentSession.value
+  if (!sseSession) return
+
   let aiMessage: ChatMessageType | undefined
   if (existingAiMessageId) {
-    aiMessage = currentSession.value!.messages.find(m => m.id === existingAiMessageId)
+    aiMessage = sseSession.messages.find(m => m.id === existingAiMessageId)
     if (aiMessage) {
       aiMessage.content = ''
       aiMessage.images = []
@@ -453,7 +445,7 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
   }
   if (!aiMessage) {
     aiMessage = { id: generateId(), role: 'assistant', content: '', timestamp: Date.now() }
-    currentSession.value!.messages.push(aiMessage)
+    sseSession.messages.push(aiMessage)
   }
 
   streamingMessageId.value = aiMessage.id
@@ -507,7 +499,7 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
                 aiMessage!.content = (parsed.partialResult || '') +
                   '\n\n---\n\n⚠️ **需要确认**\n\n' +
                   (parsed.confirmationMessage || '此操作需要您的确认')
-                currentSession.value!.updatedAt = Date.now()
+                sseSession.updatedAt = Date.now()
                 scrollToBottom()
                 finishStreaming()
                 return
@@ -521,15 +513,15 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
               if (parsed.text !== undefined) {
                 fullText += parsed.text
                 aiMessage!.content = fullText
-                currentSession.value!.updatedAt = Date.now()
+                sseSession.updatedAt = Date.now()
                 scrollToBottom()
                 continue
               }
-            } catch { /* non-JSON fallback */ }
+            } catch (e) { console.warn('SSE data is not valid JSON, treating as plain text:', data) }
 
             fullText += data
             aiMessage!.content = fullText
-            currentSession.value!.updatedAt = Date.now()
+            sseSession.updatedAt = Date.now()
             scrollToBottom()
           }
         }
@@ -569,20 +561,11 @@ function scrollToBottom(): void {
   })
 }
 
-function onMessageListScroll(e: Event) {
-  const el = e.target as HTMLElement
-  if (!el) return
-  if (el.scrollTop < 120) {
-    const total = currentMessages.value.length
-    if (visibleCount.value < total) {
-      visibleCount.value = Math.min(total, visibleCount.value + 200)
-    }
-  }
-}
-
 // ── Message Actions ──
 function handleRetry(messageId: string): void {
-  const msgs = currentSession.value!.messages
+  const session = currentSession.value
+  if (!session) return
+  const msgs = session.messages
   const idx = msgs.findIndex(m => m.id === messageId)
   if (idx === -1) return
   let userMsg = undefined
@@ -590,22 +573,28 @@ function handleRetry(messageId: string): void {
     if (msgs[i].role === 'user') { userMsg = msgs[i]; break }
   }
   if (!userMsg) return
-  startSSEInternal(userMsg.content || '', userMsg.images || [], userMsg.files as any || [], messageId)
+  startSSEInternal(userMsg.content || '', userMsg.images || [], userMsg.files || [], messageId)
 }
 
 function handleMessageLike(payload: { id: string; value: boolean }) {
-  const m = currentSession.value!.messages.find(x => x.id === payload.id)
-  if (m) { (m as any).liked = payload.value; saveSessions() }
+  const session = currentSession.value
+  if (!session) return
+  const m = session.messages.find(x => x.id === payload.id)
+  if (m) { m.liked = payload.value; saveSessions() }
 }
 
 function handleMessageDislike(payload: { id: string; value: boolean }) {
-  const m = currentSession.value!.messages.find(x => x.id === payload.id)
-  if (m) { (m as any).disliked = payload.value; saveSessions() }
+  const session = currentSession.value
+  if (!session) return
+  const m = session.messages.find(x => x.id === payload.id)
+  if (m) { m.disliked = payload.value; saveSessions() }
 }
 
 function handleMessageFavorite(payload: { id: string; value: boolean }) {
-  const m = currentSession.value!.messages.find(x => x.id === payload.id)
-  if (m) { (m as any).favorite = payload.value; saveSessions() }
+  const session = currentSession.value
+  if (!session) return
+  const m = session.messages.find(x => x.id === payload.id)
+  if (m) { m.favorite = payload.value; saveSessions() }
 }
 
 function handleMessageShare(messageId: string) {
@@ -626,11 +615,16 @@ async function handleConfirm(confirmationId: string): Promise<void> {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    const result = await response.json()
+    const result = await response.json().catch(() => null)
+    if (!result || typeof result.answer !== 'string') {
+      throw new Error('Invalid confirmation response')
+    }
     console.log('Confirmation result:', result)
 
     // Find and update the message with the confirmation result
-    const msgs = currentSession.value!.messages
+    const confirmSession = currentSession.value
+    if (!confirmSession) return
+    const msgs = confirmSession.messages
     const confirmMsg = msgs.find(m => m.confirmationId === confirmationId)
     if (confirmMsg) {
       // Update the message with the full result
@@ -721,7 +715,7 @@ onMounted(() => {
     try {
       const data = JSON.parse((event as MessageEvent).data)
       if (data.type === 'scheduled_task_result') handleTaskResult(data.taskId, data.content)
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('WebSocket message parse error:', e) }
   })
 })
 
@@ -729,15 +723,7 @@ onUnmounted(() => {
   try { wsDisconnect && wsDisconnect() } catch {}
 })
 
-watch(inputText, () => {
-  nextTick(() => {
-    const textarea = document.querySelector('.input-bar textarea') as HTMLTextAreaElement
-    if (textarea) {
-      textarea.style.height = 'auto'
-      textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px'
-    }
-  })
-})
+// Note: textarea auto-resize is handled inside ChatInput.vue component
 </script>
 
 <style scoped>

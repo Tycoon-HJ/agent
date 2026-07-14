@@ -78,14 +78,17 @@ public class JwtUtil {
             PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
 
             // 构建 Header（使用 withoutPadding 避免 Base64 填充字符破坏 JWT 格式）
-            String headerJson = "{\"alg\":\"EdDSA\",\"kid\":\"" + kid + "\"}";
+            // 转义 JSON 特殊字符防止注入
+            String safeKid = kid.replace("\\", "\\\\").replace("\"", "\\\"");
+            String safeSub = sub.replace("\\", "\\\\").replace("\"", "\\\"");
+            String headerJson = "{\"alg\":\"EdDSA\",\"kid\":\"" + safeKid + "\"}";
             String headerEncoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
 
             // 构建 Payload
             long iat = ZonedDateTime.now(ZoneOffset.UTC).toEpochSecond() - CLOCK_SKEW_SECONDS;
             long exp = iat + TOKEN_VALIDITY_SECONDS;
-            String payloadJson = "{\"sub\":\"" + sub + "\",\"iat\":" + iat + ",\"exp\":" + exp + "}";
+            String payloadJson = "{\"sub\":\"" + safeSub + "\",\"iat\":" + iat + ",\"exp\":" + exp + "}";
             String payloadEncoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
 

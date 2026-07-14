@@ -104,6 +104,10 @@ public class MemeTool implements Tool {
     public String execute(String args) {
         log.info("MemeTool 开始执行，参数: {}", args);
 
+        if (API_TOKEN == null || API_TOKEN.isBlank()) {
+            return "错误：ALAPI_TOKEN 环境变量未设置，无法搜索表情包";
+        }
+
         try {
             // 解析 JSON 参数
             JSONObject params = JSONUtil.parseObj(args);
@@ -148,17 +152,18 @@ public class MemeTool implements Tool {
      * @return 格式化的表情包结果
      */
     private String searchMeme(String keyword, int num) {
-        // 构建请求 URL（GET 请求，参数拼接在 URL 中）
-        String url = BASE_URL + "?token=" + API_TOKEN
-                + "&keyword=" + cn.hutool.core.util.URLUtil.encode(keyword)
+        // 构建请求 URL（token 通过 Header 传递，避免泄露到日志）
+        String url = BASE_URL
+                + "?keyword=" + cn.hutool.core.util.URLUtil.encode(keyword)
                 + "&num=" + num
                 + "&type=json";
 
-        log.debug("请求表情包API: {}", url);
+        log.debug("请求表情包API: {}", BASE_URL);
 
-        // 发起 HTTP GET 请求
+        // 发起 HTTP GET 请求，token 通过 Header 传递
         String response = HttpRequest.get(url)
                 .header(Header.CONTENT_TYPE, "application/json")
+                .header(Header.AUTHORIZATION, "Bearer " + API_TOKEN)
                 .timeout(15000)  // 超时 15 秒
                 .execute()
                 .body();

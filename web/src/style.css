@@ -304,11 +304,6 @@ html, body {
 .stagger-children > *:nth-child(5) { animation-delay: 240ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
 
-/* ── Virtual Scroller ─────────────────────── */
-.virtual-scroller {
-  width: 100%;
-}
-
 /* ── Code highlight overrides ─────────────── */
 .hljs {
   background: transparent !important;

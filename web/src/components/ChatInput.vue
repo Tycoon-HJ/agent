@@ -142,6 +142,7 @@ const textarea = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 const isFocused = ref(false)
+let blurTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Skill related state
 const skills = ref<Skill[]>([])
@@ -255,8 +256,10 @@ function onKeydown(e: KeyboardEvent) {
 function onBlur() {
   isFocused.value = false
   // Delay hiding menu to allow click
-  setTimeout(() => {
+  if (blurTimeout) clearTimeout(blurTimeout)
+  blurTimeout = setTimeout(() => {
     showSkillMenu.value = false
+    blurTimeout = null
   }, 200)
 }
 
@@ -312,6 +315,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (blurTimeout) clearTimeout(blurTimeout)
   document.removeEventListener('click', handleClickOutside)
 })
 </script>

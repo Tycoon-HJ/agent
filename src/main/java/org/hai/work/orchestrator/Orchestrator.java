@@ -177,7 +177,7 @@ public class Orchestrator {
         } else {
             // 如果格式不匹配，尝试简单解析
             int markerIndex = output.indexOf(PENDING_CONFIRMATION_MARKER);
-            if (markerIndex > 0) {
+            if (markerIndex >= 0) {
                 partialResult = output.substring(0, markerIndex).trim();
             }
             String afterMarker = output.substring(markerIndex + PENDING_CONFIRMATION_MARKER.length()).trim();
@@ -300,8 +300,8 @@ public class Orchestrator {
             if (agent != null) return agent;
         }
 
-        // 关键词匹配 → schedule-agent
-        if (input != null && input.matches(".*(?:提醒|定时|分钟后|小时后|明天.*点|每天|每周).*")) {
+        // 关键词匹配 → schedule-agent（更精确的匹配，避免否定句误匹配）
+        if (input != null && input.matches("^(?!.*(?:不需要|不要|取消|忘了|算了)).*(?:提醒我|设置提醒|定时|\\d+分钟后|\\d+小时后|明天.*点|后天.*点|每天|每周|每月).*")) {
             Agent agent = agentRegistry.get("schedule-agent");
             if (agent != null) return agent;
         }

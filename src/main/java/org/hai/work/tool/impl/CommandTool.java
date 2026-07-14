@@ -78,7 +78,11 @@ public class CommandTool implements Tool {
 
         try {
             JsonNode root = objectMapper.readTree(args);
-            String command = root.get("command").asText();
+            JsonNode commandNode = root.get("command");
+            if (commandNode == null || commandNode.isNull()) {
+                return "错误：缺少 command 参数";
+            }
+            String command = commandNode.asText();
 
             if (command == null || command.isBlank()) {
                 return "错误：command 参数不能为空";
@@ -162,6 +166,7 @@ public class CommandTool implements Tool {
                 result.append("(无输出)\n");
             }
 
+            log.info("执行命令返回：{}", result);
             return result.toString();
 
         } catch (IOException e) {
@@ -173,36 +178,117 @@ public class CommandTool implements Tool {
     }
 
     /**
-     * 命令安全检查
+     * 命令安全检查（白名单机制）
      *
      * @return 错误信息，如果安全返回 null
      */
     private String checkCommandSafety(String command) {
         String lower = command.toLowerCase().trim();
 
-        // 危险命令黑名单
+        // 危险命令黑名单（作为额外防护层）
         String[] dangerousPatterns = {
-                "rm -rf /", "rm -rf /*",
+                "rm -rf", "rm -r /", "rm -f /",
                 "format ", "format c:",
-                "del /f /s /q", "del /f /s",
-                "rd /s /q",
+                "del /f /s /q", "del /f /s", "del /f",
+                "rd /s /q", "rd /s",
                 "mkfs.",
                 "dd if=",
                 ":(){ :|:& };:",  // fork bomb
-                "chmod -r 777 /",
-                "> /dev/sda",
-                "shutdown -h now",
-                "init 0",
-                "systemctl stop",
+                "chmod -r 777 /", "chmod 777 /",
+                "> /dev/sda", "> /dev/null",
+                "shutdown", "reboot", "halt", "poweroff",
+                "init 0", "init 6",
+                "systemctl stop", "systemctl disable", "systemctl mask",
+                "service .* stop",
+                "kill -9", "killall",
+                "pkill",
+                "iptables -F",
+                "userdel", "groupdel",
+                "passwd ",
+                "chown -r", "chown root",
+                "wget .* | sh", "curl .* | sh", "curl .* | bash",
+                "eval ", "exec ",
+                "powershell", "pwsh", "cmd.exe",
+                "reg delete", "reg add",
+                "net user", "net localgroup",
+                "schtasks", "at ",
+                "crontab -r",
+                "docker rm", "docker kill", "docker stop",
+                "kubectl delete",
+                "git push .* --force", "git reset --hard",
+                "sudo ", "su ",
         };
 
+        // 检查命令是否以允许的前缀开头（白名单）
+        String[] allowedPrefixes = {
+                "agently-cli",
+                "ls", "dir", "pwd", "whoami", "hostname", "date", "cal",
+                "cat", "head", "tail", "wc", "grep", "find", "which", "where",
+                "echo", "printf",
+                "ipconfig", "ifconfig", "ip addr", "ip route",
+                "ping", "tracert", "traceroute", "nslookup", "dig",
+                "tasklist", "ps aux", "ps -ef", "top -n 1",
+                "uname", "ver", "systeminfo",
+                "df -h", "du -sh", "free -h",
+                "env", "printenv", "set",
+                "git status", "git log", "git diff", "git branch", "git show",
+                "java -version", "python --version", "node --version", "npm --version",
+                "mvn -version", "gradle --version",
+                "docker ps", "docker images", "docker logs",
+                "kubectl get", "kubectl describe",
+                "curl -s", "curl --head", "wget --spider",
+                "tar -tf", "unzip -l",
+                "sort", "uniq", "cut", "awk", "sed",
+                "tree", "lsblk", "mount",
+                "netstat", "ss", "lsof",
+                "uptime", "w ",
+                "id ", "groups",
+                "file ", "stat ",
+                "md5sum", "sha256sum",
+        };
+
+        // 提取命令的第一个 token（考虑引号和路径）
+        String firstToken = extractFirstToken(command);
+
+        // 白名单检查：命令必须以允许的前缀开头
+        boolean allowed = false;
+        for (String prefix : allowedPrefixes) {
+            if (firstToken.equals(prefix) || firstToken.startsWith(prefix + " ") || firstToken.equals(prefix)) {
+                allowed = true;
+                break;
+            }
+        }
+
+        if (!allowed) {
+            log.warn("拒绝执行不在白名单中的命令: {}", command);
+            return "安全警告：命令 '" + firstToken + "' 不在允许执行的命令列表中。允许的命令包括: ls, cat, grep, ping, git status, java -version 等常用查看/诊断命令。";
+        }
+
+        // 黑名单二次检查（防御性深度检查）
         for (String pattern : dangerousPatterns) {
             if (lower.contains(pattern)) {
                 log.warn("拒绝执行危险命令: {}", command);
-                return "安全警告：拒绝执行危险命令 '" + pattern + "'";
+                return "安全警告：拒绝执行危险命令，检测到危险模式 '" + pattern + "'";
             }
         }
 
         return null;
+    }
+
+    /**
+     * 提取命令的第一个 token
+     */
+    private String extractFirstToken(String command) {
+        String trimmed = command.trim();
+        // 处理路径前缀（如 /usr/bin/ls → ls）
+        if (trimmed.startsWith("/")) {
+            int lastSlash = trimmed.lastIndexOf('/');
+            if (lastSlash >= 0 && lastSlash < trimmed.length() - 1) {
+                trimmed = trimmed.substring(lastSlash + 1);
+            }
+        }
+        // 提取第一个空格前的部分
+        int spaceIndex = trimmed.indexOf(' ');
+        return spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
     }
 }

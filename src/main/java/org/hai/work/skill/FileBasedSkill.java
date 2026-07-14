@@ -82,7 +82,7 @@ public class FileBasedSkill implements Skill {
      * ```
      */
     static FileBasedSkill parse(String fileName, String content, Path filePath) {
-        String name = fileName.replace(".md", "").replace(".skill.md", "");
+        String name = fileName.replace(".skill.md", "").replace(".md", "");
         String description = "";
         List<String> requiredTools = new ArrayList<>();
         String systemPromptAddon = content;

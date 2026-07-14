@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.hai.work.tool.Tool;
-import org.hai.work.tool.ToolRegistry;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
@@ -79,7 +78,7 @@ public class AiConfig {
         // Tool 接口方式
         Map<String, Tool> customTools = context.getBeansOfType(Tool.class);
         ToolCallback[] customCallbacks = customTools.values().stream()
-                .<ToolCallback>map(tool -> FunctionToolCallback.builder(tool.name(), (Function<Map, String>) map -> {
+                .<ToolCallback>map(tool -> FunctionToolCallback.builder(tool.name(), (Function<Map<String, Object>, String>) map -> {
                             try {
                                 String json = objectMapper.writeValueAsString(map);
                                 return tool.execute(json);

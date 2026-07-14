@@ -69,8 +69,9 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
         log.debug("收到 WebSocket 消息: sessionId={}", session.getId());
 
         try {
+            @SuppressWarnings("unchecked")
             Map<String, Object> msg = objectMapper.readValue(payload, Map.class);
-            String type = (String) msg.get("type");
+            String type = msg.get("type") instanceof String s ? s : null;
 
             // 心跳响应
             if ("ping".equals(type)) {

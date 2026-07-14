@@ -133,6 +133,10 @@ public class Planner {
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> stepMaps = (List<Map<String, Object>>) root.get("steps");
+            if (stepMaps == null || stepMaps.isEmpty()) {
+                log.warn("Planner 返回的工作流缺少 steps 字段，使用降级工作流");
+                return createFallbackWorkflow("unknown");
+            }
             List<Step> steps = stepMaps.stream()
                     .map(this::mapToStep)
                     .toList();
@@ -152,7 +156,8 @@ public class Planner {
      */
     private Step mapToStep(Map<String, Object> map) {
         Step step = new Step();
-        step.setId((Integer) map.get("id"));
+        Object idObj = map.get("id");
+        step.setId(idObj instanceof Number n ? n.intValue() : 0);
         step.setAgentName((String) map.get("agent"));
         step.setToolName((String) map.get("tool"));
         step.setDescription((String) map.get("description"));

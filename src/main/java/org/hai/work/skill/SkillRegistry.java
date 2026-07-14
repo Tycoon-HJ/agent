@@ -169,8 +169,9 @@ public class SkillRegistry {
      * 热重载：重新加载指定目录的所有文件 Skill
      * <p>
      * 可用于运行时动态更新 Skill，无需重启应用。
+     * 使用 synchronized 防止并发重载导致不一致状态。
      */
-    public void reloadFromFile(String directoryPath) {
+    public synchronized void reloadFromFile(String directoryPath) {
         // 移除所有文件 Skill
         skills.entrySet().removeIf(entry -> entry.getValue() instanceof FileBasedSkill);
 

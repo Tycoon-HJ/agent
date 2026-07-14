@@ -28,9 +28,21 @@ public class ConfirmationStore {
     private final Map<String, PendingConfirmation> store = new ConcurrentHashMap<>();
 
     /**
+     * 最大存储容量（防止内存耗尽攻击）
+     */
+    private static final int MAX_CAPACITY = 1000;
+
+    /**
      * 保存待确认状态
      */
     public void save(PendingConfirmation confirmation) {
+        if (store.size() >= MAX_CAPACITY) {
+            log.warn("待确认状态存储已满（{}），清理过期条目后重试", MAX_CAPACITY);
+            cleanupExpired();
+            if (store.size() >= MAX_CAPACITY) {
+                throw new IllegalStateException("待确认状态存储已满，无法保存新的确认请求");
+            }
+        }
         store.put(confirmation.getConfirmationId(), confirmation);
         log.info("保存待确认状态: {}", confirmation);
     }

@@ -11,11 +11,11 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 工作流执行引擎
@@ -45,6 +45,11 @@ public class WorkflowEngine {
     public WorkflowEngine(AgentRegistry agentRegistry, ToolRegistry toolRegistry) {
         this.agentRegistry = agentRegistry;
         this.toolRegistry = toolRegistry;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
     }
 
     /**
@@ -133,7 +138,7 @@ public class WorkflowEngine {
     }
 
     /**
-     * 执行单个步骤（带重试）
+     * 执行单个步骤（带重试和超时）
      */
     private StepResult executeStepWithRetry(Step step, AgentContext context) {
         int maxAttempts = step.canRetry() ? step.getMaxRetries() + 1 : 1;
@@ -144,16 +149,35 @@ public class WorkflowEngine {
                 log.info("步骤 {} 第 {} 次重试", step.getId(), attempt);
             }
 
-            lastResult = executeStep(step, context);
+            // 应用超时控制
+            long timeoutMs = step.getTimeoutMs() > 0 ? step.getTimeoutMs() : 60000;
+            final int currentAttempt = attempt;
+            try {
+                lastResult = CompletableFuture.supplyAsync(() -> executeStep(step, context), executor)
+                        .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                        .join();
+            } catch (java.util.concurrent.CompletionException ce) {
+                Throwable cause = ce.getCause();
+                if (cause instanceof java.util.concurrent.TimeoutException) {
+                    log.warn("步骤 {} 执行超时（{}ms）", step.getId(), timeoutMs);
+                    lastResult = StepResult.failed(step.getId(), "步骤执行超时（" + timeoutMs + "ms）", timeoutMs);
+                } else {
+                    log.error("步骤 {} 执行异常", step.getId(), cause);
+                    lastResult = StepResult.failed(step.getId(), cause != null ? cause.getMessage() : ce.getMessage(), 0);
+                }
+            } catch (Exception e) {
+                log.error("步骤 {} 执行异常", step.getId(), e);
+                lastResult = StepResult.failed(step.getId(), e.getMessage(), 0);
+            }
 
             if (lastResult.isSuccess()) {
                 return lastResult;
             }
 
-            if (attempt < maxAttempts) {
+            if (currentAttempt < maxAttempts) {
                 log.warn("步骤 {} 执行失败，准备重试: {}", step.getId(), lastResult.error());
                 try {
-                    Thread.sleep(1000L * attempt); // 递增延迟
+                    Thread.sleep(1000L * currentAttempt); // 递增延迟
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return StepResult.cancelled(step.getId());

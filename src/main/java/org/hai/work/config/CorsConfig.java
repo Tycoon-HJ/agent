@@ -19,11 +19,15 @@ public class CorsConfig {
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.addAllowedOriginPattern("*");            // 允许所有来源（生产环境应限制）
-        config.addAllowedMethod("*");                   // 允许所有 HTTP 方法
-        config.addAllowedHeader("*");                   // 允许所有请求头
-        config.setAllowCredentials(true);               // 允许携带 Cookie
-        config.setMaxAge(3600L);                        // 预检请求缓存 1 小时
+        // 限制允许的来源（开发 + 生产环境）
+        config.addAllowedOriginPattern("http://localhost:*");
+        config.addAllowedOriginPattern("http://127.0.0.1:*");
+        // 如需生产环境域名，取消注释并修改：
+        // config.addAllowedOriginPattern("https://your-domain.com");
+        config.addAllowedMethod("*");
+        config.addAllowedHeader("*");
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

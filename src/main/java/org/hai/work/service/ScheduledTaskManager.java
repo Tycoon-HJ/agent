@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
@@ -177,7 +178,7 @@ public class ScheduledTaskManager {
     }
 
     /**
-     * 执行定时任务
+     * 执行定时任务（异步执行，避免阻塞调度线程池）
      * <p>
      * 任务触发时调用 RouterAgent 执行用户指定的任务描述，
      * 走正常的 Agent 路由链路。执行完毕后通过 NotificationService 推送结果给前端。
@@ -191,6 +192,11 @@ public class ScheduledTaskManager {
         log.info("========== 定时任务触发: taskId={}, userId={} ==========", taskId, userId);
         log.info("任务描述: {}", taskDescription);
 
+        // 异步执行，避免阻塞 TaskScheduler 线程池
+        CompletableFuture.runAsync(() -> executeTaskInternal(taskId, taskDescription, sessionId, userId));
+    }
+
+    private void executeTaskInternal(String taskId, String taskDescription, String sessionId, String userId) {
         try {
             AgentRequest request = new AgentRequest();
             request.setInput(taskDescription);

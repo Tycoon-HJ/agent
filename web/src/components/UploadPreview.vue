@@ -39,7 +39,22 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ images: any[]; docs: any[] }>()
+interface PreviewImage {
+  file: File | null
+  preview: string
+  base64: string
+  name: string
+}
+
+interface PreviewDoc {
+  file: File
+  name: string
+  type: string
+  content: string
+  size: number
+}
+
+defineProps<{ images: PreviewImage[]; docs: PreviewDoc[] }>()
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
