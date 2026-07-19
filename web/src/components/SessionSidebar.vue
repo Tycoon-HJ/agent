@@ -1,65 +1,63 @@
 <template>
   <aside class="sidebar">
-    <!-- Logo -->
-    <div class="sidebar-logo">
-      <div class="logo-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
-        </svg>
-      </div>
-      <div class="logo-text">
-        <span class="logo-name">Agent Studio</span>
-        <span class="logo-badge">Pro</span>
-      </div>
-    </div>
-
-    <!-- New Chat Button -->
-    <button class="btn-new-chat" @click="$emit('create')">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-      <span>New Chat</span>
-    </button>
-
-    <!-- Session List -->
-    <div class="session-list">
-      <div class="session-section-label">Recent</div>
-      <div
-        v-for="s in sessions"
-        :key="s.sessionId"
-        class="session-card"
-        :class="{ active: s.sessionId === current }"
-        @click="$emit('switch', s.sessionId)"
-      >
-        <div class="session-card-content">
-          <div class="session-card-title">{{ s.title }}</div>
-          <div class="session-card-time">{{ formatTime(s.updatedAt) }}</div>
-        </div>
-        <button
-          class="session-card-delete"
-          @click.stop="$emit('delete', s.sessionId)"
-          title="Delete"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M3 6h18"/>
-            <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+    <div class="sidebar-inner">
+      <!-- Logo -->
+      <div class="sidebar-logo">
+        <div class="logo-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
           </svg>
-        </button>
+        </div>
+        <span class="logo-name">Agent Studio</span>
       </div>
 
-      <div v-if="sessions.length === 0" class="session-empty">
-        <div class="session-empty-icon">💬</div>
-        <div class="session-empty-text">No conversations yet</div>
-      </div>
-    </div>
+      <!-- 新建会话 -->
+      <button class="btn-new-chat" @click="$emit('create')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        <span>新对话</span>
+      </button>
 
-    <!-- Sidebar Footer -->
-    <div class="sidebar-footer">
-      <div class="sidebar-user">
+      <!-- 会话列表(按时间分组) -->
+      <div class="session-list">
+        <template v-for="group in groups" :key="group.label">
+          <div v-if="group.items.length > 0" class="session-group">
+            <div class="session-group-label">{{ group.label }}</div>
+            <div
+              v-for="s in group.items"
+              :key="s.sessionId"
+              class="session-item"
+              :class="{ active: s.sessionId === current }"
+              @click="$emit('switch', s.sessionId)"
+            >
+              <span class="session-item-title">{{ s.title }}</span>
+              <button
+                class="session-item-delete"
+                @click.stop="$emit('delete', s.sessionId)"
+                title="删除会话"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M3 6h18"/>
+                  <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="sessions.length === 0" class="session-empty">
+          <div class="session-empty-icon">💬</div>
+          <div class="session-empty-text">暂无会话</div>
+        </div>
+      </div>
+
+      <!-- 底部用户信息 -->
+      <div class="sidebar-footer">
         <div class="user-avatar">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
@@ -67,8 +65,8 @@
           </svg>
         </div>
         <div class="user-info">
-          <div class="user-name">User</div>
-          <div class="user-plan">Free Plan</div>
+          <div class="user-name">本地用户</div>
+          <div class="user-plan">免费版</div>
         </div>
       </div>
     </div>
@@ -76,231 +74,218 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ChatSession } from '../types/chat'
 
-defineProps<{ sessions: ChatSession[]; current?: string }>()
+const props = defineProps<{ sessions: ChatSession[]; current?: string }>()
 
-function formatTime(ts: number) {
-  const d = new Date(ts)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
+defineEmits(['create', 'switch', 'delete'])
 
-  if (mins < 1) return 'Just now'
-  if (mins < 60) return `${mins}m ago`
-  if (hours < 24) return `${hours}h ago`
-  if (days < 7) return `${days}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+interface SessionGroup {
+  label: string
+  items: ChatSession[]
 }
+
+/** 按更新时间分组:今天 / 昨天 / 7 天内 / 更早 */
+const groups = computed<SessionGroup[]>(() => {
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfYesterday = startOfToday - 86400000
+  const startOfWeek = startOfToday - 6 * 86400000
+
+  const result: SessionGroup[] = [
+    { label: '今天', items: [] },
+    { label: '昨天', items: [] },
+    { label: '7 天内', items: [] },
+    { label: '更早', items: [] },
+  ]
+
+  for (const s of props.sessions) {
+    if (s.updatedAt >= startOfToday) result[0].items.push(s)
+    else if (s.updatedAt >= startOfYesterday) result[1].items.push(s)
+    else if (s.updatedAt >= startOfWeek) result[2].items.push(s)
+    else result[3].items.push(s)
+  }
+  return result
+})
 </script>
 
 <style scoped>
+/* 外层宽度由 ChatIndex 控制折叠动画,内层固定宽度避免内容挤压 */
 .sidebar {
-  width: 280px;
+  width: 272px;
+  height: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  transition: width var(--duration-slow) var(--ease-out),
+              border-color var(--duration-normal) ease;
+}
+
+.sidebar-inner {
+  width: 272px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(255,255,255,0.02);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255,255,255,0.06);
-  padding: 20px 16px;
-  gap: 8px;
-  flex-shrink: 0;
-  animation: slideInLeft var(--duration-slow) var(--ease-out) both;
+  padding: 12px;
+  gap: 12px;
 }
 
-/* Logo */
+/* ── Logo ───────────────────────────────── */
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 4px 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  padding: 6px 8px;
 }
 
 .logo-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
-}
-
-.logo-text {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  flex-shrink: 0;
 }
 
 .logo-name {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.3px;
 }
 
-.logo-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--primary-light);
-  background: rgba(99,102,241,0.15);
-  padding: 2px 7px;
-  border-radius: 6px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-
-/* New Chat Button */
+/* ── 新建会话按钮 ───────────────────────── */
 .btn-new-chat {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   width: 100%;
-  height: 44px;
-  border: none;
-  border-radius: 14px;
-  background: var(--gradient-primary);
-  color: white;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
+  transition: all var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-new-chat:hover {
-  transform: scale(1.02);
-  box-shadow: var(--shadow-glow-lg);
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .btn-new-chat:active {
-  transform: scale(0.98);
+  transform: translateY(0);
 }
 
-/* Session List */
+.btn-new-chat svg {
+  color: var(--text-secondary);
+}
+
+/* ── 会话列表 ───────────────────────────── */
 .session-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 0;
+  margin: 0 -4px;
+  padding: 0 4px;
 }
 
-.session-section-label {
+.session-group {
+  margin-bottom: 8px;
+}
+
+.session-group-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 8px 8px 4px;
+  padding: 8px 10px 4px;
+  user-select: none;
 }
 
-/* Session Card */
-.session-card {
+/* ── 会话项 ─────────────────────────────── */
+.session-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 12px;
-  border-radius: 14px;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out);
   position: relative;
 }
 
-.session-card:hover {
+.session-item:hover {
   background: var(--bg-surface-hover);
 }
 
-.session-card:hover .session-card-delete {
-  opacity: 1;
+.session-item.active {
+  background: var(--bg-surface-active);
 }
 
-.session-card.active {
-  background: var(--gradient-primary);
-  box-shadow: 0 4px 20px rgba(99,102,241,0.25);
+.session-item.active .session-item-title {
+  font-weight: 600;
 }
 
-.session-card.active .session-card-title {
-  color: white;
-}
-
-.session-card.active .session-card-time {
-  color: rgba(255,255,255,0.7);
-}
-
-.session-card.active .session-card-delete {
-  color: rgba(255,255,255,0.7);
-}
-
-.session-card.active .session-card-delete:hover {
-  background: rgba(255,255,255,0.15);
-  color: white;
-}
-
-.session-card-content {
+.session-item-title {
   flex: 1;
   min-width: 0;
-}
-
-.session-card-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.session-card-time {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 2px;
-}
-
-.session-card-delete {
-  width: 28px;
-  height: 28px;
+.session-item-delete {
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
-  border-radius: 8px;
+  border-radius: 7px;
   cursor: pointer;
   opacity: 0;
   transition: all var(--duration-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
-.session-card-delete:hover {
-  background: rgba(239,68,68,0.15);
-  color: var(--error);
+.session-item:hover .session-item-delete {
   opacity: 1;
 }
 
-/* Empty State */
+.session-item-delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+}
+
+/* ── 空状态 ─────────────────────────────── */
 .session-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  gap: 12px;
+  padding: 48px 20px;
+  gap: 10px;
 }
 
 .session-empty-icon {
-  font-size: 32px;
+  font-size: 28px;
   opacity: 0.5;
 }
 
@@ -309,38 +294,38 @@ function formatTime(ts: number) {
   color: var(--text-tertiary);
 }
 
-/* Sidebar Footer */
+/* ── 底部用户区 ─────────────────────────── */
 .sidebar-footer {
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.sidebar-user {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px;
-  border-radius: 12px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   transition: background var(--duration-fast) var(--ease-out);
+  cursor: default;
 }
 
-.sidebar-user:hover {
+.sidebar-footer:hover {
   background: var(--bg-surface-hover);
 }
 
 .user-avatar {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  background: var(--bg-surface);
+  border-radius: 50%;
+  background: var(--bg-surface-active);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .user-info {
   flex: 1;
+  min-width: 0;
 }
 
 .user-name {
@@ -352,5 +337,12 @@ function formatTime(ts: number) {
 .user-plan {
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+/* 触屏设备始终显示删除按钮 */
+@media (hover: none) {
+  .session-item-delete {
+    opacity: 0.6;
+  }
 }
 </style>

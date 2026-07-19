@@ -1,49 +1,20 @@
 <template>
   <div class="input-container">
-    <!-- Drop overlay -->
+    <!-- 拖拽上传遮罩 -->
     <Transition name="fade">
       <div v-if="isDragging" class="drop-overlay">
         <div class="drop-overlay-content">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          <span>Drop files here</span>
+          <span>松开以上传文件</span>
         </div>
       </div>
     </Transition>
 
-    <!-- Skill Menu -->
-    <Transition name="menu">
-      <div v-if="showSkillMenu" class="skill-menu">
-        <div class="skill-menu-header">
-          <span class="skill-menu-title">Skills</span>
-          <span class="skill-menu-hint">Select a skill to use</span>
-        </div>
-        <div class="skill-menu-list">
-          <button
-            v-for="(skill, index) in filteredSkills"
-            :key="skill.name"
-            class="skill-menu-item"
-            :class="{ active: index === selectedSkillIndex }"
-            @click="selectSkill(skill)"
-            @mouseenter="selectedSkillIndex = index"
-          >
-            <div class="skill-item-icon">⚡</div>
-            <div class="skill-item-info">
-              <div class="skill-item-name">{{ skill.name }}</div>
-              <div class="skill-item-desc">{{ skill.description }}</div>
-            </div>
-          </button>
-          <div v-if="filteredSkills.length === 0" class="skill-menu-empty">
-            No matching skills found
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Input Bar -->
+    <!-- 输入栏 -->
     <div
       class="input-bar"
       :class="{ focused: isFocused, 'has-content': hasContent }"
@@ -52,46 +23,45 @@
       @dragenter.prevent="onDragEnter"
       @dragleave.prevent="onDragLeave"
     >
-      <!-- Left Actions -->
-      <div class="input-actions-left">
-        <button class="input-action-btn" @click="triggerFileSelect" title="Attach file">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-          </svg>
-        </button>
-        <input ref="fileInput" class="visually-hidden" type="file" multiple @change="onFilesSelected" />
-      </div>
+      <!-- 左侧:附件 -->
+      <button class="input-action-btn" @click="triggerFileSelect" title="添加附件">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <input ref="fileInput" class="visually-hidden" type="file" multiple @change="onFilesSelected" />
 
-      <!-- Selected Skill Badge -->
-      <div v-if="selectedSkill" class="selected-skill-badge">
-        <span class="skill-badge-name">{{ selectedSkill.name }}</span>
-        <button class="skill-badge-remove" @click="removeSkill">×</button>
-      </div>
-
-      <!-- Textarea -->
+      <!-- 文本域 -->
       <textarea
         ref="textarea"
         v-model="model"
         :placeholder="placeholder"
-        @keydown="onKeydown"
+        @keydown.enter.exact.prevent="onEnter"
         @focus="isFocused = true"
-        @blur="onBlur"
+        @blur="isFocused = false"
         @paste="onPaste"
         :disabled="isStreaming"
         rows="1"
       ></textarea>
 
-      <!-- Right Actions -->
+      <!-- 右侧操作 -->
       <div class="input-actions-right">
+        <!-- 模型选择 -->
+        <div class="model-selector" @click="toggleModelMenu" title="选择模型">
+          <span class="model-name">{{ currentModel }}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
 
-        <!-- Send / Stop Button -->
+        <!-- 发送 / 停止 -->
         <button
           v-if="isStreaming"
           class="btn-stop"
           @click="$emit('stop')"
-          title="Stop generating"
+          title="停止生成"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="2"/>
           </svg>
         </button>
@@ -101,33 +71,43 @@
           :class="{ active: canSend }"
           :disabled="!canSend"
           @click="$emit('send')"
-          title="Send message"
+          title="发送"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/>
+            <polyline points="5 12 12 5 19 12"/>
           </svg>
         </button>
       </div>
     </div>
 
-    <!-- Input Hint -->
+    <!-- 提示行 -->
     <div class="input-hint">
-      <span>
-        <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>/</kbd> skills
-      </span>
+      <span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span>
+      <span class="input-hint-divider">·</span>
+      <span>内容由 AI 生成,请注意甄别</span>
     </div>
+
+    <!-- 模型菜单 -->
+    <Transition name="menu">
+      <div v-if="showModelMenu" class="model-menu">
+        <button
+          v-for="m in models"
+          :key="m"
+          class="model-menu-item"
+          :class="{ active: m === currentModel }"
+          @click="selectModel(m)"
+        >
+          <span class="model-menu-dot" :class="{ active: m === currentModel }"></span>
+          {{ m }}
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
-
-interface Skill {
-  name: string
-  description: string
-  requiredTools: string[]
-}
+import { computed, ref, nextTick, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: string
@@ -136,20 +116,16 @@ const props = defineProps<{
   canSend: boolean
 }>()
 
-const emit = defineEmits(['update:modelValue', 'send', 'stop', 'add-files', 'paste', 'skill-selected'])
+const emit = defineEmits(['update:modelValue', 'send', 'stop', 'add-files', 'paste'])
 
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 const isFocused = ref(false)
-let blurTimeout: ReturnType<typeof setTimeout> | null = null
+const showModelMenu = ref(false)
 
-// Skill related state
-const skills = ref<Skill[]>([])
-const showSkillMenu = ref(false)
-const selectedSkillIndex = ref(0)
-const selectedSkill = ref<Skill | null>(null)
-const skillSearchQuery = ref('')
+const models = ['GPT-5', 'Claude', 'DeepSeek', 'Gemini']
+const currentModel = ref('Claude')
 
 const model = computed({
   get: () => props.modelValue,
@@ -158,40 +134,14 @@ const model = computed({
 
 const hasContent = computed(() => props.modelValue.trim().length > 0)
 
-// Filter skills based on search query
-const filteredSkills = computed(() => {
-  if (!skillSearchQuery.value) return skills.value
-  const query = skillSearchQuery.value.toLowerCase()
-  return skills.value.filter(s =>
-    s.name.toLowerCase().includes(query) ||
-    s.description.toLowerCase().includes(query)
-  )
-})
-
-// Fetch skills from backend
-async function fetchSkills() {
-  try {
-    const response = await fetch('/api/skills')
-    if (response.ok) {
-      skills.value = await response.json()
-    }
-  } catch (e) {
-    console.error('Failed to fetch skills:', e)
-  }
-}
-
-// Auto resize textarea
+// 文本域自适应高度
 watch(() => props.modelValue, () => {
   nextTick(() => {
     if (textarea.value) {
       textarea.value.style.height = 'auto'
-      textarea.value.style.height = Math.min(textarea.value.scrollHeight, 160) + 'px'
+      textarea.value.style.height = Math.min(textarea.value.scrollHeight, 180) + 'px'
     }
   })
-})
-
-onMounted(() => {
-  fetchSkills()
 })
 
 function triggerFileSelect() {
@@ -218,124 +168,42 @@ function onPaste(e: ClipboardEvent) {
 
 function onDragEnter() { isDragging.value = true }
 function onDragLeave() { isDragging.value = false }
+function onEnter() { emit('send') }
 
-function onKeydown(e: KeyboardEvent) {
-  // Handle skill menu navigation
-  if (showSkillMenu.value) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      selectedSkillIndex.value = Math.min(selectedSkillIndex.value + 1, filteredSkills.value.length - 1)
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      selectedSkillIndex.value = Math.max(selectedSkillIndex.value - 1, 0)
-      return
-    }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (filteredSkills.value.length > 0) {
-        selectSkill(filteredSkills.value[selectedSkillIndex.value])
-      }
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      showSkillMenu.value = false
-      return
-    }
-  }
-
-  // Handle Enter to send
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    emit('send')
-  }
+function toggleModelMenu() {
+  showModelMenu.value = !showModelMenu.value
 }
 
-function onBlur() {
-  isFocused.value = false
-  // Delay hiding menu to allow click
-  if (blurTimeout) clearTimeout(blurTimeout)
-  blurTimeout = setTimeout(() => {
-    showSkillMenu.value = false
-    blurTimeout = null
-  }, 200)
+function selectModel(m: string) {
+  currentModel.value = m
+  showModelMenu.value = false
 }
 
-// Watch for '/' input to show skill menu
-watch(() => props.modelValue, (newVal) => {
-  // Check if user just typed '/'
-  if (newVal === '/' || (newVal.endsWith('/') && !newVal.endsWith('//'))) {
-    showSkillMenu.value = true
-    selectedSkillIndex.value = 0
-    skillSearchQuery.value = ''
-  } else if (showSkillMenu.value) {
-    // Extract search query after '/'
-    const slashIndex = newVal.lastIndexOf('/')
-    if (slashIndex >= 0) {
-      skillSearchQuery.value = newVal.substring(slashIndex + 1)
-    } else {
-      showSkillMenu.value = false
+// 点击外部关闭模型菜单
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement
+    if (!target.closest('.model-selector') && !target.closest('.model-menu')) {
+      showModelMenu.value = false
     }
-  }
-})
-
-function selectSkill(skill: Skill) {
-  selectedSkill.value = skill
-  showSkillMenu.value = false
-  // Clear the '/' and search query from input
-  const slashIndex = props.modelValue.lastIndexOf('/')
-  if (slashIndex >= 0) {
-    emit('update:modelValue', props.modelValue.substring(0, slashIndex))
-  }
-  // Notify parent about skill selection
-  emit('skill-selected', skill)
-  // Focus back to textarea
-  nextTick(() => {
-    textarea.value?.focus()
   })
 }
-
-function removeSkill() {
-  selectedSkill.value = null
-  emit('skill-selected', null)
-}
-
-// Close skill menu on click outside
-function handleClickOutside(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (!target.closest('.skill-menu') && !target.closest('.input-container')) {
-    showSkillMenu.value = false
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
-
-onUnmounted(() => {
-  if (blurTimeout) clearTimeout(blurTimeout)
-  document.removeEventListener('click', handleClickOutside)
-})
 </script>
 
 <style scoped>
 .input-container {
   position: relative;
   width: 100%;
-  max-width: 1000px;
-  margin: 0 auto;
 }
 
-/* Drop Overlay */
+/* ── 拖拽遮罩 ───────────────────────────── */
 .drop-overlay {
   position: absolute;
-  inset: -4px;
+  inset: -6px;
   border: 2px dashed var(--primary);
-  border-radius: 28px;
-  background: rgba(99,102,241,0.08);
-  backdrop-filter: blur(10px);
+  border-radius: 24px;
+  background: var(--primary-soft);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -347,43 +215,33 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: var(--primary-light);
+  color: var(--primary-strong);
   font-weight: 600;
   font-size: 14px;
 }
 
-/* Input Bar */
+/* ── 输入栏 ─────────────────────────────── */
 .input-bar {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  gap: 6px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 24px;
-  padding: 8px 8px 8px 4px;
-  transition: all var(--duration-normal) var(--ease-out);
+  border-radius: 22px;
+  padding: 8px;
+  transition: border-color var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out),
+              background-color var(--duration-normal) ease;
   min-height: 56px;
+  box-shadow: var(--shadow-sm);
 }
 
 .input-bar.focused {
-  border-color: var(--primary);
+  border-color: var(--border-focus);
   box-shadow: var(--shadow-glow);
 }
 
-.input-bar.has-content {
-  border-color: rgba(99,102,241,0.3);
-}
-
-/* Left Actions */
-.input-actions-left {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-left: 4px;
-}
-
+/* 附件按钮 */
 .input-action-btn {
   width: 40px;
   height: 40px;
@@ -396,63 +254,28 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   transition: all var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
 }
 
 .input-action-btn:hover {
   background: var(--bg-surface-hover);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
-/* Selected Skill Badge */
-.selected-skill-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: rgba(99,102,241,0.15);
-  border-radius: 12px;
-  flex-shrink: 0;
-}
-
-.skill-badge-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary-light);
-}
-
-.skill-badge-remove {
-  width: 16px;
-  height: 16px;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  padding: 0;
-  line-height: 1;
-}
-
-.skill-badge-remove:hover {
-  color: var(--error);
-}
-
-/* Textarea */
+/* 文本域 */
 .input-bar textarea {
   flex: 1;
   border: none;
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.6;
   resize: none;
   outline: none;
   min-height: 40px;
-  max-height: 160px;
-  padding: 8px 4px;
+  max-height: 180px;
+  padding: 9px 4px;
 }
 
 .input-bar textarea::placeholder {
@@ -463,15 +286,41 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
-/* Right Actions */
+/* 右侧操作 */
 .input-actions-right {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding-right: 4px;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-/* Send Button */
+/* 模型选择器 */
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  user-select: none;
+}
+
+.model-selector:hover {
+  background: var(--bg-surface-hover);
+}
+
+.model-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.model-selector svg {
+  color: var(--text-tertiary);
+}
+
+/* 发送按钮 */
 .btn-send {
   width: 40px;
   height: 40px;
@@ -490,7 +339,7 @@ onUnmounted(() => {
 .btn-send.active {
   background: var(--gradient-primary);
   color: white;
-  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
 }
 
 .btn-send.active:hover {
@@ -507,33 +356,37 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
-/* Stop Button */
+/* 停止按钮 */
 .btn-stop {
   width: 40px;
   height: 40px;
   border: none;
   border-radius: 14px;
-  background: rgba(239,68,68,0.15);
-  color: var(--error);
+  background: var(--primary);
+  color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all var(--duration-normal) var(--ease-out);
   flex-shrink: 0;
+  animation: pulse 2s infinite;
 }
 
 .btn-stop:hover {
-  background: rgba(239,68,68,0.25);
   transform: scale(1.05);
 }
 
-/* Input Hint */
+/* ── 提示行 ─────────────────────────────── */
 .input-hint {
-  text-align: center;
-  padding: 8px 0 0;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 10px;
+  font-size: 11.5px;
   color: var(--text-muted);
+  user-select: none;
 }
 
 .input-hint kbd {
@@ -543,115 +396,72 @@ onUnmounted(() => {
   padding: 1px 5px;
   font-family: var(--font-mono);
   font-size: 10px;
+  color: var(--text-tertiary);
 }
 
-/* Skill Menu */
-.skill-menu {
+.input-hint-divider {
+  opacity: 0.6;
+}
+
+/* ── 模型菜单 ───────────────────────────── */
+.model-menu {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
+  right: 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
-  border-radius: 16px;
-  overflow: hidden;
+  border-radius: 14px;
+  padding: 6px;
+  min-width: 160px;
   box-shadow: var(--shadow-lg);
   z-index: 20;
-  max-height: 320px;
-  display: flex;
-  flex-direction: column;
 }
 
-.skill-menu-header {
-  padding: 12px 16px 8px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.skill-menu-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.skill-menu-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.skill-menu-list {
-  overflow-y: auto;
-  padding: 6px;
-  flex: 1;
-}
-
-.skill-menu-item {
+.model-menu-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: 9px;
   transition: all var(--duration-fast) var(--ease-out);
-  text-align: left;
 }
 
-.skill-menu-item:hover,
-.skill-menu-item.active {
+.model-menu-item:hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
 
-.skill-item-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(99,102,241,0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
+.model-menu-item.active {
+  color: var(--primary-strong);
 }
 
-.skill-item-info {
-  flex: 1;
-  min-width: 0;
+.model-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
-.skill-item-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 2px;
+.model-menu-dot.active {
+  background: var(--primary);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
 }
 
-.skill-item-desc {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.skill-menu-empty {
-  padding: 16px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-/* Transitions */
+/* ── 过渡动画 ───────────────────────────── */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
@@ -660,9 +470,11 @@ onUnmounted(() => {
 .menu-enter-active {
   transition: all 0.2s var(--ease-out);
 }
+
 .menu-leave-active {
   transition: all 0.15s ease-in;
 }
+
 .menu-enter-from,
 .menu-leave-to {
   opacity: 0;

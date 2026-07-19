@@ -1,21 +1,6 @@
 <template>
   <div class="app-shell" :class="{ 'sidebar-open': sidebarOpen }">
-    <!-- Background -->
-    <div class="app-bg">
-      <div class="app-bg-gradient"></div>
-      <div class="app-bg-glow"></div>
-    </div>
-
-    <!-- Mobile sidebar toggle -->
-    <button class="mobile-sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <line x1="3" y1="12" x2="21" y2="12"/>
-        <line x1="3" y1="6" x2="21" y2="6"/>
-        <line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
-    </button>
-
-    <!-- Sidebar -->
+    <!-- 侧边栏 -->
     <div class="sidebar-overlay" v-if="sidebarOpen" @click="sidebarOpen = false"></div>
     <SessionSidebar
       :sessions="sessions"
@@ -25,100 +10,150 @@
       @delete="deleteSession"
     />
 
-    <!-- Main Chat Area -->
+    <!-- 主聊天区 -->
     <main class="chat-main">
-      <!-- Header -->
+      <!-- 顶栏 -->
       <header class="chat-header">
         <div class="header-left">
-          <h2 class="header-title">{{ currentSession?.title || 'New Chat' }}</h2>
+          <button
+            class="header-btn"
+            @click="sidebarOpen = !sidebarOpen"
+            :title="sidebarOpen ? '收起侧边栏' : '展开侧边栏'"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+          </button>
+          <h2 class="header-title">{{ currentSession?.title || '新对话' }}</h2>
         </div>
         <div class="header-right">
+          <button
+            class="header-btn"
+            @click="toggleTheme"
+            :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
+          >
+            <svg v-if="theme === 'dark'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
         </div>
       </header>
 
-      <!-- Messages or Welcome -->
-      <div ref="messageListRef" class="chat-body">
-        <!-- Welcome Screen -->
+      <!-- 消息区 / 欢迎页 -->
+      <div ref="messageListRef" class="chat-body" @scroll.passive="onMessageListScroll">
+        <!-- 欢迎页 -->
         <div v-if="currentMessages.length === 0" class="welcome">
           <div class="welcome-logo">
-            <div class="welcome-logo-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                <path d="M2 17l10 5 10-5"/>
-                <path d="M2 12l10 5 10-5"/>
-              </svg>
-            </div>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
           </div>
-          <h1 class="welcome-title">Agent Studio</h1>
-          <p class="welcome-subtitle">Build AI Agents Faster</p>
+          <h1 class="welcome-title">{{ greeting }},有什么可以帮你的?</h1>
+          <p class="welcome-subtitle">Agent Studio 智能助手,支持搜索、推理、文档分析与图片生成</p>
 
           <div class="welcome-cards stagger-children">
-            <div class="welcome-card" v-for="cap in capabilities" :key="cap.label">
+            <button
+              class="welcome-card"
+              v-for="cap in suggestions"
+              :key="cap.label"
+              @click="applySuggestion(cap.prompt)"
+            >
               <div class="welcome-card-icon">{{ cap.icon }}</div>
-              <div class="welcome-card-label">{{ cap.label }}</div>
-              <div class="welcome-card-desc">{{ cap.desc }}</div>
-            </div>
+              <div class="welcome-card-text">
+                <div class="welcome-card-label">{{ cap.label }}</div>
+                <div class="welcome-card-desc">{{ cap.desc }}</div>
+              </div>
+            </button>
           </div>
         </div>
 
-        <!-- Message List -->
+        <!-- 消息列表 -->
         <div v-else class="messages-container">
           <div class="messages-inner">
-            <ChatMessage
-              v-for="item in currentMessages"
-              :key="item.id"
-              :message="item"
-              :is-streaming="isStreaming && item.id === streamingMessageId"
-              @retry="handleRetry"
-              @like="handleMessageLike"
-              @dislike="handleMessageDislike"
-              @favorite="handleMessageFavorite"
-              @share="handleMessageShare"
-              @confirm="handleConfirm"
-            />
+            <DynamicScroller
+              :items="currentMessages"
+              key-field="id"
+              class="virtual-scroller"
+              :min-item-size="80"
+            >
+              <template #default="{ item }">
+                <DynamicScrollerItem :item="item" :key="item.id">
+                  <ChatMessage
+                    :message="item"
+                    :is-streaming="isStreaming && item.id === streamingMessageId"
+                    @retry="handleRetry"
+                    @like="handleMessageLike"
+                    @dislike="handleMessageDislike"
+                    @favorite="handleMessageFavorite"
+                    @share="handleMessageShare"
+                  />
+                </DynamicScrollerItem>
+              </template>
+            </DynamicScroller>
           </div>
         </div>
       </div>
 
-      <!-- Input Area -->
-      <div class="chat-footer">
-        <!-- Upload Preview -->
-        <UploadPreview
-          v-if="uploadedImages.length > 0 || uploadedDocuments.length > 0"
-          :images="uploadedImages"
-          :docs="uploadedDocuments"
-          @remove-image="removeUploadedImage"
-          @remove-doc="removeUploadedDocument"
-        />
+      <!-- 回到底部按钮 -->
+      <Transition name="fade">
+        <button
+          v-if="showScrollBottom"
+          class="scroll-bottom-btn"
+          @click="scrollToBottom(true)"
+          title="回到底部"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </Transition>
 
-        <!-- Input -->
-        <ChatInput
-          v-model="inputText"
-          :placeholder="getPlaceholder()"
-          :isStreaming="isStreaming"
-          :canSend="canSend"
-          @send="sendMessage"
-          @stop="stopGeneration"
-          @add-files="addFileFromExternal"
-          @paste="handlePaste"
-          @skill-selected="onSkillSelected"
-        />
+      <!-- 输入区 -->
+      <div class="chat-footer">
+        <div class="footer-inner">
+          <UploadPreview
+            v-if="uploadedImages.length > 0 || uploadedDocuments.length > 0"
+            :images="uploadedImages"
+            :docs="uploadedDocuments"
+            @remove-image="removeUploadedImage"
+            @remove-doc="removeUploadedDocument"
+          />
+
+          <ChatInput
+            v-model="inputText"
+            :placeholder="getPlaceholder()"
+            :isStreaming="isStreaming"
+            :canSend="canSend"
+            @send="sendMessage"
+            @stop="stopGeneration"
+            @add-files="addFileFromExternal"
+            @paste="handlePaste"
+          />
+        </div>
       </div>
     </main>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useWebSocket } from '../composables/useWebSocket'
+import { useTheme } from '../composables/useTheme'
 import type { ChatMessage as ChatMessageType, ChatSession } from '../types/chat'
 import ChatMessage from '../components/ChatMessage.vue'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatInput from '../components/ChatInput.vue'
 import UploadPreview from '../components/UploadPreview.vue'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 
-// ── Constants ──
+// ── 常量 ──
 const userId = 'default-user'
 const MAX_IMAGES = 5
 const MAX_FILES = 3
@@ -126,21 +161,26 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024
 const STORAGE_KEY = 'ai-chat-sessions'
 const SUPPORTED_FILE_EXTENSIONS = ['.csv', '.md', '.txt', '.xlsx', '.xls', '.pdf']
 
-const capabilities = [
-  { icon: '🔍', label: 'Search', desc: 'Real-time web search' },
-  { icon: '🧠', label: 'Reasoning', desc: 'Advanced chain-of-thought' },
-  { icon: '📚', label: 'Knowledge', desc: 'Document analysis' },
-  { icon: '⚡', label: 'Tools', desc: 'Function calling' },
+const suggestions = [
+  { icon: '🔍', label: '联网搜索', desc: '查找最新的资讯与资料', prompt: '帮我搜索最近的 AI 行业新闻,并总结要点' },
+  { icon: '💡', label: '深度思考', desc: '复杂问题逐步推理', prompt: '用第一性原理解释一下什么是量子计算' },
+  { icon: '📄', label: '文档分析', desc: '上传文件,提炼重点', prompt: '帮我总结这份文档的核心内容' },
+  { icon: '🎨', label: '图片生成', desc: '用文字描绘画面', prompt: '画一只在月球上喝咖啡的猫,赛博朋克风格' },
 ]
 
-// ── State ──
-const sidebarOpen = ref(false)
+// ── 主题 ──
+const { theme, toggleTheme } = useTheme()
+
+// ── 状态 ──
+const sidebarOpen = ref(typeof window !== 'undefined' ? window.innerWidth > 768 : true)
 const sessions = ref<ChatSession[]>([])
 const currentSessionId = ref('')
 const inputText = ref('')
 const isStreaming = ref(false)
 const streamingMessageId = ref('')
 const messageListRef = ref<HTMLElement | null>(null)
+const stickToBottom = ref(true)
+const visibleCount = ref(200)
 let abortControllerRef: AbortController | null = null
 let wsDisconnect: (() => void) | null = null
 
@@ -162,15 +202,7 @@ interface UploadedDocument {
 const uploadedImages = ref<UploadedImage[]>([])
 const uploadedDocuments = ref<UploadedDocument[]>([])
 
-interface Skill {
-  name: string
-  description: string
-  requiredTools: string[]
-}
-
-const selectedSkill = ref<Skill | null>(null)
-
-// ── Computed ──
+// ── 计算属性 ──
 const currentSession = computed(() =>
   sessions.value.find(s => s.sessionId === currentSessionId.value)
 )
@@ -183,39 +215,52 @@ const canSend = computed(() => {
   return (inputText.value.trim() || uploadedImages.value.length > 0 || uploadedDocuments.value.length > 0) && !isStreaming.value
 })
 
-// ── Helpers ──
+const showScrollBottom = computed(() =>
+  !stickToBottom.value && currentMessages.value.length > 0
+)
+
+/** 按时段的问候语 */
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h >= 5 && h < 12) return '早上好'
+  if (h >= 12 && h < 14) return '中午好'
+  if (h >= 14 && h < 18) return '下午好'
+  return '晚上好'
+})
+
+// ── 工具函数 ──
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
 function getPlaceholder(): string {
-  if (uploadedImages.value.length > 0) return 'Describe how to edit the image...'
-  if (uploadedDocuments.value.length > 0) return 'Ask a question about the file...'
-  return 'Ask me anything...'
+  if (uploadedImages.value.length > 0) return '描述一下想如何处理这张图片…'
+  if (uploadedDocuments.value.length > 0) return '针对这个文件提个问题…'
+  return '输入你的问题…'
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+/** 点击建议卡片:填入输入框并聚焦 */
+function applySuggestion(prompt: string): void {
+  inputText.value = prompt
+  nextTick(() => {
+    const textarea = document.querySelector('.input-bar textarea') as HTMLTextAreaElement | null
+    textarea?.focus()
+  })
 }
 
-function onSkillSelected(skill: Skill | null) {
-  selectedSkill.value = skill
-}
-
-// ── Session Management ──
+// ── 会话管理 ──
 function createNewSession(): void {
   const sessionId = generateId()
   const newSession: ChatSession = {
     sessionId,
-    title: 'New Chat',
+    title: '新对话',
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   }
   sessions.value.unshift(newSession)
   currentSessionId.value = sessionId
+  stickToBottom.value = true
   saveSessions()
 }
 
@@ -224,34 +269,29 @@ function switchSession(sessionId: string): void {
   uploadedImages.value = []
   uploadedDocuments.value = []
   currentSessionId.value = sessionId
-  sidebarOpen.value = false
-  saveSessions()
+  // 移动端切换会话后收起抽屉
+  if (window.innerWidth <= 768) sidebarOpen.value = false
+  visibleCount.value = 200
+  stickToBottom.value = true
+  scrollToBottom(true)
 }
 
 function deleteSession(sessionId: string): void {
   const index = sessions.value.findIndex(s => s.sessionId === sessionId)
   if (index === -1) return
-
-  // 先从数组中移除
-  sessions.value.splice(index, 1)
-
-  // 如果删除的是当前会话，需要切换
   if (sessionId === currentSessionId.value) {
-    if (sessions.value.length > 0) {
-      // 切换到相邻会话（优先上方）
-      const newIndex = Math.min(index, sessions.value.length - 1)
-      currentSessionId.value = sessions.value[newIndex].sessionId
+    if (sessions.value.length > 1) {
+      currentSessionId.value = sessions.value[index === 0 ? 1 : index - 1].sessionId
     } else {
-      // 所有会话都删光了，创建一个新的
       createNewSession()
       return
     }
   }
-
+  sessions.value.splice(index, 1)
   saveSessions()
 }
 
-// ── Image Upload ──
+// ── 图片上传 ──
 function addImageFromFile(file: File): void {
   if (!file.type.startsWith('image/')) return
   if (file.size > MAX_FILE_SIZE) return
@@ -269,7 +309,7 @@ function removeUploadedImage(index: number): void {
   uploadedImages.value.splice(index, 1)
 }
 
-// ── Document Upload ──
+// ── 文档上传 ──
 async function addDocumentFromFile(file: File): Promise<void> {
   const ext = '.' + file.name.split('.').pop()?.toLowerCase()
   if (!SUPPORTED_FILE_EXTENSIONS.includes(ext)) return
@@ -290,7 +330,7 @@ async function addDocumentFromFile(file: File): Promise<void> {
 
     uploadedDocuments.value.push({ file, name: file.name, type: mimeType, content, size: file.size })
   } catch (e) {
-    console.error('[FileUpload] Read failed:', e)
+    console.error('[FileUpload] 读取失败:', e)
   }
 }
 
@@ -354,7 +394,7 @@ function addFileFromExternal(files: File[] | File): void {
   }
 }
 
-// ── Paste Handler ──
+// ── 粘贴处理 ──
 function handlePaste(event: ClipboardEvent): void {
   const clipboardData = event.clipboardData
   if (!clipboardData) return
@@ -382,7 +422,7 @@ function handlePaste(event: ClipboardEvent): void {
   }
 }
 
-// ── Message Sending & SSE ──
+// ── 消息发送 & SSE ──
 async function sendMessage(): Promise<void> {
   const text = inputText.value.trim()
   const hasImages = uploadedImages.value.length > 0
@@ -390,8 +430,6 @@ async function sendMessage(): Promise<void> {
   if ((!text && !hasImages && !hasFiles) || isStreaming.value) return
 
   if (!currentSession.value) createNewSession()
-  const session = currentSession.value
-  if (!session) return
 
   const imageUrls: string[] = uploadedImages.value.map(img => img.preview)
   const fileDataList = uploadedDocuments.value.map(doc => ({
@@ -401,43 +439,39 @@ async function sendMessage(): Promise<void> {
   const userMessage: ChatMessageType = {
     id: generateId(),
     role: 'user',
-    content: text || (hasImages ? '[Sent image]' : (hasFiles ? '[Sent file]' : '')),
+    content: text || (hasImages ? '[发送了图片]' : (hasFiles ? '[发送了文件]' : '')),
     timestamp: Date.now(),
     images: imageUrls.length > 0 ? imageUrls : undefined,
     files: fileDataList.length > 0 ? fileDataList : undefined,
   }
 
-  session.messages.push(userMessage)
-  session.updatedAt = Date.now()
+  currentSession.value!.messages.push(userMessage)
+  currentSession.value!.updatedAt = Date.now()
 
-  if (session.messages.length === 1) {
-    const title = text || (hasFiles ? 'File Analysis' : 'Image Chat')
-    session.title = title.slice(0, 20) + (title.length > 20 ? '...' : '')
+  if (currentSession.value!.messages.length === 1) {
+    const title = text || (hasFiles ? '文件分析' : '图片对话')
+    currentSession.value!.title = title.slice(0, 20) + (title.length > 20 ? '…' : '')
   }
 
-  const skillName = selectedSkill.value?.name
   inputText.value = ''
   uploadedImages.value = []
   uploadedDocuments.value = []
-  selectedSkill.value = null
+  stickToBottom.value = true
   saveSessions()
-  scrollToBottom()
-  startSSE(text, imageUrls, fileDataList, skillName)
+  scrollToBottom(true)
+  startSSE(text, imageUrls, fileDataList)
 }
 
-function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], skillName?: string): void {
-  startSSEInternal(text, imageUrls, fileDataList, undefined, skillName)
+function startSSE(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = []): void {
+  startSSEInternal(text, imageUrls, fileDataList)
 }
 
-function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], existingAiMessageId?: string, skillName?: string): void {
+function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: { name: string; type: string; content: string }[] = [], existingAiMessageId?: string): void {
   const sessionId = currentSessionId.value
-
-  const sseSession = currentSession.value
-  if (!sseSession) return
 
   let aiMessage: ChatMessageType | undefined
   if (existingAiMessageId) {
-    aiMessage = sseSession.messages.find(m => m.id === existingAiMessageId)
+    aiMessage = currentSession.value!.messages.find(m => m.id === existingAiMessageId)
     if (aiMessage) {
       aiMessage.content = ''
       aiMessage.images = []
@@ -445,14 +479,14 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
   }
   if (!aiMessage) {
     aiMessage = { id: generateId(), role: 'assistant', content: '', timestamp: Date.now() }
-    sseSession.messages.push(aiMessage)
+    currentSession.value!.messages.push(aiMessage)
   }
 
   streamingMessageId.value = aiMessage.id
   isStreaming.value = true
   let fullText = ''
 
-  const body = JSON.stringify({ input: text, images: imageUrls, files: fileDataList, skill: skillName })
+  const body = JSON.stringify({ input: text, images: imageUrls, files: fileDataList })
   const abortController = new AbortController()
 
   fetch(`/api/ask/stream?sessionId=${encodeURIComponent(sessionId)}`, {
@@ -464,7 +498,7 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
     .then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       const reader = response.body?.getReader()
-      if (!reader) throw new Error('Cannot read response stream')
+      if (!reader) throw new Error('无法读取响应流')
 
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
@@ -487,23 +521,6 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
           if (data) {
             try {
               const parsed = JSON.parse(data)
-              // Handle confirmation event
-              if (parsed.type === 'confirmation' && parsed.confirmationId) {
-                console.log('Received confirmation event:', parsed)
-                // Update the message with confirmation fields
-                aiMessage!.needsConfirmation = true
-                aiMessage!.confirmationId = parsed.confirmationId
-                aiMessage!.confirmationMessage = parsed.confirmationMessage
-                aiMessage!.partialResult = parsed.partialResult
-                aiMessage!.pendingAction = parsed.pendingAction
-                aiMessage!.content = (parsed.partialResult || '') +
-                  '\n\n---\n\n⚠️ **需要确认**\n\n' +
-                  (parsed.confirmationMessage || '此操作需要您的确认')
-                sseSession.updatedAt = Date.now()
-                scrollToBottom()
-                finishStreaming()
-                return
-              }
               if (parsed.type === 'image' && parsed.url) {
                 if (!aiMessage!.images) aiMessage!.images = []
                 aiMessage!.images.push(parsed.url)
@@ -513,15 +530,15 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
               if (parsed.text !== undefined) {
                 fullText += parsed.text
                 aiMessage!.content = fullText
-                sseSession.updatedAt = Date.now()
+                currentSession.value!.updatedAt = Date.now()
                 scrollToBottom()
                 continue
               }
-            } catch (e) { console.warn('SSE data is not valid JSON, treating as plain text:', data) }
+            } catch { /* 非 JSON 数据走纯文本兜底 */ }
 
             fullText += data
             aiMessage!.content = fullText
-            sseSession.updatedAt = Date.now()
+            currentSession.value!.updatedAt = Date.now()
             scrollToBottom()
           }
         }
@@ -530,7 +547,7 @@ function startSSEInternal(text: string, imageUrls: string[] = [], fileDataList: 
     })
     .catch((err) => {
       if (err.name === 'AbortError') return
-      console.error('SSE error:', err)
+      console.error('SSE 错误:', err)
       finishStreaming()
     })
 
@@ -552,8 +569,9 @@ function finishStreaming(): void {
   saveSessions()
 }
 
-// ── Scroll ──
-function scrollToBottom(): void {
+// ── 滚动 ──
+function scrollToBottom(force = false): void {
+  if (!force && !stickToBottom.value) return
   nextTick(() => {
     if (messageListRef.value) {
       messageListRef.value.scrollTop = messageListRef.value.scrollHeight
@@ -561,11 +579,22 @@ function scrollToBottom(): void {
   })
 }
 
-// ── Message Actions ──
+function onMessageListScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (!el) return
+  // 距底部 80px 以内视为贴底,流式输出时自动跟随;向上滚动则暂停跟随
+  stickToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (el.scrollTop < 120) {
+    const total = currentMessages.value.length
+    if (visibleCount.value < total) {
+      visibleCount.value = Math.min(total, visibleCount.value + 200)
+    }
+  }
+}
+
+// ── 消息操作 ──
 function handleRetry(messageId: string): void {
-  const session = currentSession.value
-  if (!session) return
-  const msgs = session.messages
+  const msgs = currentSession.value!.messages
   const idx = msgs.findIndex(m => m.id === messageId)
   if (idx === -1) return
   let userMsg = undefined
@@ -573,87 +602,30 @@ function handleRetry(messageId: string): void {
     if (msgs[i].role === 'user') { userMsg = msgs[i]; break }
   }
   if (!userMsg) return
-  startSSEInternal(userMsg.content || '', userMsg.images || [], userMsg.files || [], messageId)
+  stickToBottom.value = true
+  startSSEInternal(userMsg.content || '', userMsg.images || [], userMsg.files as any || [], messageId)
 }
 
 function handleMessageLike(payload: { id: string; value: boolean }) {
-  const session = currentSession.value
-  if (!session) return
-  const m = session.messages.find(x => x.id === payload.id)
-  if (m) { m.liked = payload.value; saveSessions() }
+  const m = currentSession.value!.messages.find(x => x.id === payload.id)
+  if (m) { (m as any).liked = payload.value; saveSessions() }
 }
 
 function handleMessageDislike(payload: { id: string; value: boolean }) {
-  const session = currentSession.value
-  if (!session) return
-  const m = session.messages.find(x => x.id === payload.id)
-  if (m) { m.disliked = payload.value; saveSessions() }
+  const m = currentSession.value!.messages.find(x => x.id === payload.id)
+  if (m) { (m as any).disliked = payload.value; saveSessions() }
 }
 
 function handleMessageFavorite(payload: { id: string; value: boolean }) {
-  const session = currentSession.value
-  if (!session) return
-  const m = session.messages.find(x => x.id === payload.id)
-  if (m) { m.favorite = payload.value; saveSessions() }
+  const m = currentSession.value!.messages.find(x => x.id === payload.id)
+  if (m) { (m as any).favorite = payload.value; saveSessions() }
 }
 
 function handleMessageShare(messageId: string) {
-  console.debug('share message', messageId)
+  console.debug('分享消息', messageId)
 }
 
-async function handleConfirm(confirmationId: string): Promise<void> {
-  console.log('Confirming:', confirmationId)
-  isStreaming.value = true
-
-  try {
-    const response = await fetch(`/api/confirm/${confirmationId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    const result = await response.json().catch(() => null)
-    if (!result || typeof result.answer !== 'string') {
-      throw new Error('Invalid confirmation response')
-    }
-    console.log('Confirmation result:', result)
-
-    // Find and update the message with the confirmation result
-    const confirmSession = currentSession.value
-    if (!confirmSession) return
-    const msgs = confirmSession.messages
-    const confirmMsg = msgs.find(m => m.confirmationId === confirmationId)
-    if (confirmMsg) {
-      // Update the message with the full result
-      confirmMsg.content = result.answer || '操作已完成'
-      confirmMsg.needsConfirmation = false
-      confirmMsg.confirmationId = undefined
-      confirmMsg.confirmationMessage = undefined
-      confirmMsg.partialResult = undefined
-      confirmMsg.pendingAction = undefined
-      saveSessions()
-    }
-  } catch (e) {
-    console.error('Confirmation failed:', e)
-    // Show error message
-    const errorMsg: ChatMessageType = {
-      id: generateId(),
-      role: 'assistant',
-      content: '确认失败: ' + (e instanceof Error ? e.message : String(e)),
-      timestamp: Date.now(),
-    }
-    currentSession.value!.messages.push(errorMsg)
-    saveSessions()
-  } finally {
-    isStreaming.value = false
-    scrollToBottom()
-  }
-}
-
-// ── Persistence ──
+// ── 持久化 ──
 function saveSessions(): void {
   try {
     const sessionsToSave = sessions.value.map(session => ({
@@ -666,7 +638,7 @@ function saveSessions(): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionsToSave))
     localStorage.setItem('ai-chat-current', currentSessionId.value)
   } catch (e) {
-    console.error('Save failed:', e)
+    console.error('保存失败:', e)
   }
 }
 
@@ -679,7 +651,7 @@ function loadSessions(): void {
       currentSessionId.value = savedCurrent
     }
   } catch (e) {
-    console.error('Load failed:', e)
+    console.error('加载失败:', e)
   }
 }
 
@@ -691,7 +663,7 @@ function handleTaskResult(taskId: string, content: string): void {
   const aiMessage: ChatMessageType = {
     id: generateId(),
     role: 'assistant',
-    content: `⏰ **Scheduled Task Result** (ID: ${taskId})\n\n${content}`,
+    content: `⏰ **定时任务结果**(ID: ${taskId})\n\n${content}`,
     timestamp: Date.now(),
   }
 
@@ -701,13 +673,13 @@ function handleTaskResult(taskId: string, content: string): void {
   nextTick(() => scrollToBottom())
 }
 
-// ── Lifecycle ──
+// ── 生命周期 ──
 onMounted(() => {
   loadSessions()
   if (sessions.value.length === 0) createNewSession()
   else if (!currentSessionId.value) currentSessionId.value = sessions.value[0].sessionId
 
-  // WebSocket
+  // WebSocket 通知
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/notifications?userId=${userId}`
   const { connect, disconnect } = useWebSocket()
   wsDisconnect = disconnect
@@ -715,7 +687,7 @@ onMounted(() => {
     try {
       const data = JSON.parse((event as MessageEvent).data)
       if (data.type === 'scheduled_task_result') handleTaskResult(data.taskId, data.content)
-    } catch (e) { console.warn('WebSocket message parse error:', e) }
+    } catch { /* 忽略无法解析的消息 */ }
   })
 })
 
@@ -723,67 +695,27 @@ onUnmounted(() => {
   try { wsDisconnect && wsDisconnect() } catch {}
 })
 
-// Note: textarea auto-resize is handled inside ChatInput.vue component
+watch(currentSessionId, () => {
+  scrollToBottom(true)
+})
 </script>
 
 <style scoped>
-/* ── Shell ────────────────────────────────── */
+/* ── 整体骨架 ───────────────────────────── */
 .app-shell {
   position: relative;
   display: flex;
   height: 100vh;
   overflow: hidden;
-}
-
-/* Background */
-.app-bg {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-}
-
-.app-bg-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
-}
-
-.app-bg-glow {
-  position: absolute;
-  top: -200px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 60%);
-  pointer-events: none;
-}
-
-/* Mobile toggle */
-.mobile-sidebar-toggle {
-  display: none;
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 200;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border);
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  color: var(--text-primary);
-  border-radius: 12px;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
+  background: var(--bg-base);
+  transition: background-color var(--duration-normal) ease;
 }
 
 .sidebar-overlay {
   display: none;
 }
 
-/* ── Chat Main ────────────────────────────── */
+/* ── 主聊天区 ───────────────────────────── */
 .chat-main {
   flex: 1;
   display: flex;
@@ -792,170 +724,225 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* Header */
+/* 顶栏 */
 .chat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 32px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
   flex-shrink: 0;
-  background: rgba(15,23,42,0.5);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.header-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.header-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 
 .header-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: -0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.header-id {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  background: var(--bg-surface);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-/* Body */
+/* 消息滚动区 */
 .chat-body {
   flex: 1;
   overflow-y: auto;
   position: relative;
 }
 
-/* ── Welcome Screen ───────────────────────── */
+/* ── 欢迎页 ─────────────────────────────── */
 .welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100%;
-  padding: 60px 40px;
+  padding: 48px 32px;
   text-align: center;
-  animation: fadeInUp 0.6s var(--ease-out) both;
+  animation: fadeInUp 0.5s var(--ease-out) both;
 }
 
 .welcome-logo {
-  margin-bottom: 28px;
-}
-
-.welcome-logo-icon {
-  width: 100px;
-  height: 100px;
-  border-radius: 28px;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
   background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 20px 60px rgba(99,102,241,0.3);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.3);
+  margin-bottom: 24px;
   animation: float 4s ease-in-out infinite;
 }
 
 .welcome-title {
-  font-size: 48px;
-  font-weight: 800;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.3;
+  margin-bottom: 10px;
   color: var(--text-primary);
-  letter-spacing: -1.5px;
-  line-height: 1.1;
-  margin-bottom: 12px;
-  background: linear-gradient(135deg, #F8FAFC 0%, #94A3B8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .welcome-subtitle {
-  font-size: 18px;
-  color: var(--text-secondary);
-  margin-bottom: 48px;
-  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin-bottom: 40px;
 }
 
 .welcome-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  max-width: 700px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 560px;
   width: 100%;
 }
 
 .welcome-card {
-  background: var(--bg-glass);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 24px 16px;
-  text-align: center;
-  cursor: default;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .welcome-card:hover {
-  background: var(--bg-glass-strong);
   border-color: var(--border-light);
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .welcome-card-icon {
-  font-size: 28px;
-  margin-bottom: 12px;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.welcome-card-text {
+  min-width: 0;
 }
 
 .welcome-card-label {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .welcome-card-desc {
   font-size: 12px;
   color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ── Messages Container ───────────────────── */
+/* ── 消息列表 ───────────────────────────── */
 .messages-container {
-  padding: 40px;
+  padding: 24px 24px 32px;
 }
 
 .messages-inner {
-  max-width: 900px;
+  max-width: 768px;
   margin: 0 auto;
 }
 
-/* ── Footer ───────────────────────────────── */
+/* ── 回到底部按钮 ───────────────────────── */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 132px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.scroll-bottom-btn:hover {
+  color: var(--text-primary);
+  transform: translateX(-50%) translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── 输入区 ─────────────────────────────── */
 .chat-footer {
-  padding: 16px 32px 24px;
+  padding: 8px 24px 16px;
   flex-shrink: 0;
-  background: linear-gradient(180deg, transparent 0%, rgba(15,23,42,0.8) 100%);
 }
 
-/* ── Responsive ───────────────────────────── */
-@media (max-width: 1200px) {
-  .app-shell :deep(.agent-panel) {
-    display: none;
+.footer-inner {
+  max-width: 768px;
+  margin: 0 auto;
+}
+
+/* ── 桌面端:侧边栏折叠 ──────────────────── */
+@media (min-width: 769px) {
+  .app-shell:not(.sidebar-open) :deep(.sidebar) {
+    width: 0;
+    border-right-color: transparent;
   }
 }
 
+/* ── 移动端:抽屉式侧边栏 ────────────────── */
 @media (max-width: 768px) {
-  .mobile-sidebar-toggle {
-    display: flex;
-  }
-
   .app-shell :deep(.sidebar) {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
     z-index: 150;
-    transform: translateX(-100%);
-    transition: transform 0.3s var(--ease-out);
+    width: 280px;
+    transform: translateX(-105%);
+    transition: transform var(--duration-slow) var(--ease-out);
+    box-shadow: var(--shadow-lg);
   }
 
   .app-shell.sidebar-open :deep(.sidebar) {
@@ -966,29 +953,48 @@ onUnmounted(() => {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
+    background: var(--overlay-bg);
     z-index: 140;
-  }
-
-  .chat-header {
-    padding: 16px 20px;
-    padding-left: 56px;
+    animation: fadeIn var(--duration-normal) ease both;
   }
 
   .messages-container {
-    padding: 20px;
+    padding: 16px 16px 24px;
   }
 
   .chat-footer {
-    padding: 12px 16px 20px;
+    padding: 4px 12px 12px;
+  }
+
+  .welcome {
+    padding: 32px 20px;
   }
 
   .welcome-cards {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .welcome-title {
-    font-size: 36px;
+    font-size: 21px;
   }
+
+  .welcome-subtitle {
+    margin-bottom: 32px;
+  }
+
+  .scroll-bottom-btn {
+    bottom: 118px;
+  }
+}
+
+/* 回到底部按钮过渡 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--duration-fast) ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

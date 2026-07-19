@@ -1,21 +1,19 @@
 <template>
   <div
-    class="message"
+    class="message fade-in-up"
     :class="message.role === 'user' ? 'message-user' : 'message-ai'"
   >
-    <!-- AI: Avatar + Content -->
+    <!-- AI:头像 + 内容 -->
     <template v-if="message.role === 'assistant'">
       <div class="ai-avatar">
-        <div class="ai-avatar-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
       </div>
       <div class="ai-content">
-        <!-- AI generated images -->
+        <!-- AI 生成的图片 -->
         <div v-if="message.images && message.images.length > 0" class="ai-images">
           <div
             v-for="(img, index) in message.images"
@@ -23,8 +21,8 @@
             class="ai-image-item"
           >
             <template v-if="isRenderableImage(img)">
-              <img :src="img" :alt="`Generated image ${index + 1}`" @click="previewImage(img)"/>
-              <button class="image-download-btn" @click.stop="downloadImage(img, index)" title="Download">
+              <img :src="img" :alt="`生成的图片 ${index + 1}`" @click="previewImage(img)"/>
+              <button class="image-download-btn" @click.stop="downloadImage(img, index)" title="下载图片">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
@@ -32,70 +30,57 @@
                 </svg>
               </button>
             </template>
-            <div v-else class="image-placeholder">Image unavailable</div>
+            <div v-else class="image-placeholder">图片不可用</div>
           </div>
         </div>
 
-        <!-- Markdown Body -->
+        <!-- Markdown 正文 -->
         <div class="ai-body" :class="{ 'is-streaming': isStreaming }">
           <div v-if="isStreaming && !displayedText" class="thinking-indicator">
             <span class="thinking-dot"></span>
             <span class="thinking-dot"></span>
             <span class="thinking-dot"></span>
-            <span class="thinking-label">Thinking...</span>
+            <span class="thinking-label">正在思考…</span>
           </div>
           <MarkdownRender v-else :content="isStreaming ? displayedText : message.content"/>
-          <span v-if="isStreaming && displayedText" class="cursor-blink">▋</span>
+          <span v-if="isStreaming && displayedText" class="cursor-blink">▍</span>
         </div>
 
-        <!-- Confirmation Banner -->
-        <div v-if="message.needsConfirmation && !isStreaming" class="confirmation-banner">
-          <div class="confirmation-icon">⚠️</div>
-          <div class="confirmation-content">
-            <div class="confirmation-title">需要确认</div>
-            <div class="confirmation-message">{{ message.confirmationMessage || '此操作需要您的确认' }}</div>
-            <div v-if="message.pendingAction" class="confirmation-action">
-              <strong>待执行操作：</strong>{{ message.pendingAction }}
-            </div>
-          </div>
-          <button class="confirmation-btn" @click="confirm" :disabled="isConfirming">
-            <span v-if="isConfirming" class="confirming-spinner"></span>
-            <span v-else>确认继续</span>
-          </button>
-        </div>
-
-        <!-- Actions -->
-        <div v-if="!isStreaming" class="ai-actions">
-          <button class="action-btn" @click="copyContent" title="Copy">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <!-- 操作按钮(悬停显示) -->
+        <div v-if="!isStreaming && message.content" class="ai-actions">
+          <button class="action-btn" :class="{ copied }" @click="copyContent" :title="copied ? '已复制' : '复制'">
+            <svg v-if="copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <rect x="9" y="9" width="13" height="13" rx="2"/>
               <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
             </svg>
           </button>
-          <button class="action-btn" @click="retry" title="Regenerate">
+          <button class="action-btn" @click="retry" title="重新生成">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M1 4v6h6"/>
               <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
             </svg>
           </button>
-          <button class="action-btn" :class="{ active: liked }" @click="toggleLike" title="Good response">
+          <button class="action-btn" :class="{ active: liked }" @click="toggleLike" title="回答不错">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/>
               <path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
             </svg>
           </button>
-          <button class="action-btn" :class="{ active: disliked }" @click="toggleDislike" title="Bad response">
+          <button class="action-btn" :class="{ active: disliked }" @click="toggleDislike" title="回答不好">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/>
               <path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
             </svg>
           </button>
-          <button class="action-btn" :class="{ active: favorite }" @click="toggleFavorite" title="Save">
+          <button class="action-btn" :class="{ active: favorite }" @click="toggleFavorite" title="收藏">
             <svg width="14" height="14" viewBox="0 0 24 24" :fill="favorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
           </button>
-          <button class="action-btn" @click="share" title="Share">
+          <button class="action-btn" @click="share" title="分享">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <circle cx="18" cy="5" r="3"/>
               <circle cx="6" cy="12" r="3"/>
@@ -108,10 +93,10 @@
       </div>
     </template>
 
-    <!-- User: Bubble -->
+    <!-- 用户:右侧气泡 -->
     <template v-else>
       <div class="user-bubble">
-        <!-- Images -->
+        <!-- 图片 -->
         <div v-if="message.images && message.images.length > 0" class="user-images">
           <div
             v-for="(img, index) in message.images"
@@ -119,12 +104,12 @@
             class="user-image-item"
           >
             <template v-if="isRenderableImage(img)">
-              <img :src="img" :alt="`Uploaded image ${index + 1}`" @click="previewImage(img)"/>
+              <img :src="img" :alt="`上传的图片 ${index + 1}`" @click="previewImage(img)"/>
             </template>
-            <div v-else class="image-placeholder">Image unavailable</div>
+            <div v-else class="image-placeholder">图片不可用</div>
           </div>
         </div>
-        <!-- Files -->
+        <!-- 文件 -->
         <div v-if="message.files && message.files.length > 0" class="user-files">
           <div v-for="(file, index) in message.files" :key="index" class="user-file-chip">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -134,17 +119,17 @@
             <span>{{ file.name }}</span>
           </div>
         </div>
-        <!-- Text -->
+        <!-- 文本 -->
         <div v-if="message.content" class="user-text">{{ message.content }}</div>
       </div>
     </template>
 
-    <!-- Image Preview Modal -->
+    <!-- 图片预览弹层 -->
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="previewUrl" class="image-modal" @click="previewUrl = ''">
           <div class="image-modal-backdrop"></div>
-          <img :src="previewUrl" alt="Preview" class="image-modal-img"/>
+          <img :src="previewUrl" alt="预览" class="image-modal-img"/>
           <button class="image-modal-close" @click.stop="previewUrl = ''">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/>
@@ -158,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch } from 'vue'
 import type { ChatMessage as ChatMessageModel } from '../types/chat'
 import MarkdownRender from './MarkdownRender.vue'
 
@@ -168,22 +153,15 @@ interface Props {
 }
 
 const { message, isStreaming = false } = defineProps<Props>()
-const emit = defineEmits(['retry', 'like', 'dislike', 'favorite', 'share', 'confirm'])
+const emit = defineEmits(['retry', 'like', 'dislike', 'favorite', 'share'])
 
-const liked = ref(!!message?.liked)
-const disliked = ref(!!message?.disliked)
-const favorite = ref(!!message?.favorite)
+const liked = ref(!!(message as any)?.liked)
+const disliked = ref(!!(message as any)?.disliked)
+const favorite = ref(!!(message as any)?.favorite)
+const copied = ref(false)
 const previewUrl = ref('')
 const displayedText = ref(message.content || '')
-const isConfirming = ref(false)
 let streamTimer: ReturnType<typeof window.setInterval> | null = null
-
-onUnmounted(() => {
-  if (streamTimer) {
-    window.clearInterval(streamTimer)
-    streamTimer = null
-  }
-})
 
 watch(
   () => message.content,
@@ -225,7 +203,6 @@ function downloadImage(url: string, index: number) {
   link.href = url
   link.download = `ai-image-${Date.now()}-${index}.png`
   link.target = '_blank'
-  link.rel = 'noopener noreferrer'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -234,9 +211,12 @@ function downloadImage(url: string, index: number) {
 function copyContent() {
   try {
     const text = message.content || ''
-    if (text) navigator.clipboard.writeText(text)
+    if (!text) return
+    navigator.clipboard.writeText(text)
+    copied.value = true
+    window.setTimeout(() => { copied.value = false }, 1500)
   } catch (e) {
-    console.warn('Copy failed', e)
+    console.warn('复制失败', e)
   }
 }
 
@@ -263,56 +243,42 @@ function toggleFavorite() {
 
 function share() {
   try {
-    navigator.clipboard.writeText(`[AI Response]\n${message.content || ''}`)
+    navigator.clipboard.writeText(`[AI 回复]\n${message.content || ''}`)
   } catch (e) {
-    console.warn('Share failed', e)
+    console.warn('分享失败', e)
   }
   emit('share', message.id)
-}
-
-async function confirm() {
-  if (!message.confirmationId || isConfirming.value) return
-  isConfirming.value = true
-  try {
-    emit('confirm', message.confirmationId)
-  } finally {
-    // Reset after a delay (parent will handle the actual confirmation)
-    setTimeout(() => {
-      isConfirming.value = false
-    }, 2000)
-  }
 }
 </script>
 
 <style scoped>
-/* ── Message Container ────────────────────── */
+/* ── 消息容器 ───────────────────────────── */
 .message {
   display: flex;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 14px;
+  margin-bottom: 28px;
   max-width: 100%;
 }
 
-/* ── User Message ─────────────────────────── */
+/* ── 用户消息 ───────────────────────────── */
 .message-user {
   justify-content: flex-end;
 }
 
 .user-bubble {
-  max-width: 70%;
-  background: var(--gradient-primary);
-  border-radius: 20px 20px 6px 20px;
-  padding: 14px 18px;
+  max-width: 75%;
+  background: var(--user-bubble-bg);
+  border-radius: 18px;
+  padding: 10px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 4px 20px rgba(99,102,241,0.2);
 }
 
 .user-text {
-  font-size: 14px;
-  line-height: 1.6;
-  color: white;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--user-bubble-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -335,7 +301,7 @@ async function confirm() {
   display: block;
   max-height: 200px;
   object-fit: cover;
-  transition: transform 0.2s;
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 
 .user-image-item:hover img {
@@ -351,41 +317,39 @@ async function confirm() {
 .user-file-chip {
   display: flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(255,255,255,0.15);
-  border-radius: 8px;
+  gap: 6px;
+  background: var(--bg-surface-active);
+  border: 1px solid var(--border);
+  border-radius: 9px;
   padding: 5px 10px;
   font-size: 12px;
-  color: rgba(255,255,255,0.9);
+  color: var(--text-secondary);
 }
 
 .user-file-chip span {
-  max-width: 120px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ── AI Message ───────────────────────────── */
+/* ── AI 消息 ────────────────────────────── */
 .message-ai {
   align-items: flex-start;
 }
 
 .ai-avatar {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.ai-avatar-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   background: var(--gradient-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 4px 12px rgba(99,102,241,0.25);
+  flex-shrink: 0;
+  margin-top: 2px;
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.25);
 }
 
 .ai-content {
@@ -414,7 +378,7 @@ async function confirm() {
   display: block;
   max-height: 350px;
   object-fit: cover;
-  transition: transform 0.2s;
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 
 .ai-image-item:hover img {
@@ -432,10 +396,10 @@ async function confirm() {
   width: 32px;
   height: 32px;
   border: none;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(10px);
   color: white;
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -445,7 +409,7 @@ async function confirm() {
 }
 
 .image-download-btn:hover {
-  background: rgba(0,0,0,0.8);
+  background: rgba(0, 0, 0, 0.75);
 }
 
 .image-placeholder {
@@ -460,33 +424,21 @@ async function confirm() {
   padding: 12px;
 }
 
-/* AI Body */
+/* AI 正文:无卡片,直接排版,阅读更舒适 */
 .ai-body {
-  background: var(--bg-glass);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 20px;
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.8;
   color: var(--text-primary);
   position: relative;
-  transition: border-color var(--duration-normal) var(--ease-out);
+  padding-top: 2px;
 }
 
-.ai-body:hover {
-  border-color: var(--border-light);
-}
-
-.ai-body.is-streaming {
-  border-color: rgba(99,102,241,0.2);
-}
-
-/* Thinking Indicator */
+/* 思考中指示器 */
 .thinking-indicator {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .thinking-dot {
@@ -507,120 +459,32 @@ async function confirm() {
 
 .thinking-label {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   margin-left: 4px;
   animation: pulse 2s infinite;
 }
 
-/* Cursor */
+/* 流式光标 */
 .cursor-blink {
   color: var(--primary);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   animation: pulse 1s infinite;
   margin-left: 2px;
 }
 
-/* AI Actions */
+/* 操作按钮:默认隐藏,悬停消息时显示 */
 .ai-actions {
   display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  padding-left: 4px;
+  gap: 2px;
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-/* Confirmation Banner */
-.confirmation-banner {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 12px;
-  padding: 16px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  border-radius: 14px;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.confirmation-banner:hover {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.confirmation-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.confirmation-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.confirmation-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.confirmation-message {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.confirmation-action {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(245, 158, 11, 0.15);
-}
-
-.confirmation-btn {
-  flex-shrink: 0;
-  padding: 10px 20px;
-  border: none;
-  background: var(--gradient-primary);
-  color: white;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 100px;
-}
-
-.confirmation-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(99,102,241,0.3);
-}
-
-.confirmation-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.confirmation-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.confirming-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.message-ai:hover .ai-actions,
+.ai-actions:focus-within {
+  opacity: 1;
 }
 
 .action-btn {
@@ -639,15 +503,26 @@ async function confirm() {
 
 .action-btn:hover {
   background: var(--bg-surface-hover);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .action-btn.active {
   color: var(--primary);
-  background: rgba(99,102,241,0.1);
+  background: var(--primary-soft);
 }
 
-/* ── Image Preview Modal ──────────────────── */
+.action-btn.copied {
+  color: var(--success);
+}
+
+/* 触屏设备常显操作按钮 */
+@media (hover: none) {
+  .ai-actions {
+    opacity: 1;
+  }
+}
+
+/* ── 图片预览弹层 ───────────────────────── */
 .image-modal {
   position: fixed;
   inset: 0;
@@ -661,7 +536,7 @@ async function confirm() {
 .image-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(20px);
 }
 
@@ -681,7 +556,7 @@ async function confirm() {
   width: 40px;
   height: 40px;
   border: none;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(10px);
   color: white;
   border-radius: 12px;
@@ -694,11 +569,11 @@ async function confirm() {
 }
 
 .image-modal-close:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.22);
   transform: scale(1.05);
 }
 
-/* Modal Transition */
+/* 弹层过渡 */
 .modal-enter-active {
   transition: all 0.25s var(--ease-out);
 }
